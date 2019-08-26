@@ -1,6 +1,6 @@
 #R implementation of assemble_input_set.py
 
-frame_split <- function(frame,fold) { #trying to approximate behavior of np.array_split in R with data frame input
+frame_split <- function(frame,fold) { #Approximating behavior of np.array_split in R with data frame input
 	n <- nrow(frame)
 	r <- n %% fold
 	q <- n %/% fold
@@ -38,7 +38,7 @@ assemble_input_set <- function(positives,negatives,fold=1) { #to balance populat
 			P <- frame_split(positives,fold)
 			N <- frame_split(negatives[sample(1:nrow(positives)),],fold)			
 		}
-		x <- list()#initializating list of dataframes here
+		x <- list()
 		for (i in 1:length(P)) {
 			X <- rbind(P[[i]],N[[i]])
 			x[[i]] <- X[sample(1:nrow(X)),]
