@@ -7,8 +7,9 @@ import random
 from math import log10
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression, Lasso, ElasticNet
 import matplotlib.pyplot as plt
-
+import seaborn as sns
 
 '''
 A helper function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
@@ -47,6 +48,12 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 
 def log_fano(array):
 	 return log10(np.nanvar(array)/np.nanmean(array)) #use variations of np.mean and np.var that leave out NaN entries
+
+def logistic(t):
+	return 1/(1+math.exp(-t))
+
+def logit(t):
+	return math.log(t/(1-t))
 
 
 def filter_overdispersed(frame,nbins=20,top_n=500): #input should be dataframe of log-transformed expression values, with columns as gene names and each row representing a cell
@@ -104,3 +111,67 @@ class tsne:
 			plt.show()
 		else:
 			plt.savefig(filepath)
+
+class log_reg_model:
+	def __init__(self, data_frame,class_values=['N','Y'],class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False, n_jobs=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		self.y = data_frame[class_col].replace([class_values[1],class_values[0]],[1,0])
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
+		else:
+			self.X = data_frame[scalar_cols]
+		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X.values/np.max(self.X.values,axis=0),self.y.values)
+#		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs, l1_ratio=l1_ratio).fit(self.X.values/np.max(self.X.values,axis=0),self.y.values) #rescale input values to be between 0 and 1 for fit
+		self.intercept = self.model.intercept_[0]
+		self.coefficients = self.model.coef_[0]/np.max(self.X.values,axis=0)
+	def plot(self,filepath=None):
+		al=sns.color_palette('husl',len(y.unique())+1)
+#		scalar=' '.join(flag.split()[:-1])+' Predictor'
+		plt.close('all')
+#		mn,mx=df[scalar].min(),df[scalar].max()
+#		hist, edges=np.histogram(df[scalar],bins=50,range=(mn,mx))
+		fig,axes=plt.subplots(len(y.unique())+1,sharex='col')
+#		for i,group in enumerate(df[flag].unique()):
+#			df[df[flag]==group][scalar].plot.hist(color=pal[-1-i],
+#				bins=50,ax=axes[i],
+#				normed=True)
+#			df[scalar].plot.hist(color='black',alpha=0.2,
+#				bins=50,ax=axes[i],
+#				normed=True)
+#			axes[i].set_ylabel(group)
+#		subhist=np.histogram(df[df[flag]=='Y'][scalar],bins=edges,
+#				range=(mn,mx))[0]
+#		axes[-1].plot((edges[:-1]+edges[1:])/2,subhist/hist,'.',color=pal[0])
+#		x=np.linspace(mn,mx,100)
+#		axes[-1].plot(x,[logistic(t) for t in x],color='black',linewidth=1.0)
+#		axes[-1].set_ylabel('p(Y)')
+#		title=' '.join(flag.split()[:-1])+' Predictor Distributions'
+#		axes[0].set_title(title,fontsize=16)
+		if filepath is None:
+			plt.show()
+		else:
+			plt.savefig(filepath)
+
+
+
+class LASSO_model:
+	def __init__(self,data_frame,class_col=None,scalar_cols=None,alpha=1.0, fit_intercept=True, normalize=False, precompute=False, copy_X=True, max_iter=1000, tol=0.0001, warm_start=False, positive=False, random_state=None, selection='cyclic'): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		self.y = data_frame[class_col]
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
+		else:
+			self.X = data_frame[scalar_cols]
+		self.model = Lasso(alpha=1.0, fit_intercept=fit_intercept, normalize=normalize, precompute=precompute, copy_X=copy_X, max_iter=max_iter, tol=tol, warm_start=warm_start, positive=positive, random_state=random_state, selection=selection)
+
+
+class elastic_net_model:
+	def __init__(self,data_frame,class_col=None,scalar_cols=None,alpha=1.0, l1_ratio=0.5, fit_intercept=True, normalize=False, precompute=False, max_iter=1000, copy_X=True, tol=0.0001, warm_start=False, positive=False, random_state=None, selection='cyclic'): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		self.y = data_frame[class_col]
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
+		else:
+			self.X = data_frame[scalar_cols]
+		self.model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=fit_intercept, normalize=normalize, precompute=precompute, max_iter=max_iter, copy_X=copy_X, tol=tol, warm_start=warm_start, positive=positive, random_state=random_state, selection=selection)
+#		model_fit = 
+
+
+#sns.heatmap
