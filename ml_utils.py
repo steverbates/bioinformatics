@@ -4,7 +4,7 @@ Library to hold my versions of workhorse functions and classes for machine learn
 import pandas as pd
 import numpy as np
 import random
-from math import log10
+from math import log10, exp
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, Lasso, ElasticNet
@@ -50,7 +50,7 @@ def log_fano(array):
 	 return log10(np.nanvar(array)/np.nanmean(array)) #use variations of np.mean and np.var that leave out NaN entries
 
 def logistic(t):
-	return 1/(1+math.exp(-t))
+	return 1/(1+exp(-t))
 
 def logit(t):
 	return math.log(t/(1-t))
@@ -113,13 +113,19 @@ class tsne:
 			plt.savefig(filepath)
 
 class log_reg_model:
-	def __init__(self, data_frame,class_values=['N','Y'],class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False, n_jobs=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
-		self.y = data_frame[class_col].replace([class_values[1],class_values[0]],[1,0])
+	def __init__(self, data_frame,class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False, n_jobs=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		self.y = data_frame[class_col]
 		if scalar_cols is None:
 			self.X = data_frame.drop(columns=class_col)
 		else:
 			self.X = data_frame[scalar_cols]
-		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X.values/np.max(self.X.values,axis=0),self.y.values)
-#		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs, l1_ratio=l1_ratio).fit(self.X.values/np.max(self.X.values,axis=0),self.y.values) #rescale input values to be between 0 and 1 for fit
+		self.scale_factors = np.max(self.X,axis=0)
+		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y.values)
 		self.intercept = self.model.intercept_[0]
-		self.coefficients = self.model.coef_[0]/np.max(self.X.values,axis=0)
+		self.coefficients = self.model.coef_[0]/self.scale_factors
+		self.class_labels = self.model.classes_
+		self.scalar_cols = scalar_cols
+	def predict_proba(self,x):
+		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+	def predict_log_proba(self,x):
+		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
