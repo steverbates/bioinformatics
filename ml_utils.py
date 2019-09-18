@@ -7,7 +7,7 @@ import random
 from math import log10, exp
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression, Lasso, ElasticNet
+from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -52,8 +52,6 @@ def log_fano(array):
 def logistic(t):
 	return 1/(1+exp(-t))
 
-def logit(t):
-	return math.log(t/(1-t))
 
 
 def filter_overdispersed(frame,nbins=20,top_n=500): #input should be dataframe of log-transformed expression values, with columns as gene names and each row representing a cell
@@ -129,3 +127,16 @@ class log_reg_model:
 		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
 	def predict_log_proba(self,x):
 		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
+	def predictors(self,x):
+		frame = pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=self.class_labels)
+		return frame[frame.columns[1]] - frame[frame.columns[0]]
+	def plot(self,filepath=None):
+		al=sns.color_palette('husl',len(y.unique())+1)
+		plt.close('all')
+		fig,axes=plt.subplots(len(y.unique())+1,sharex='col')
+		if filepath is None:
+			plt.show()
+		else:
+			plt.savefig(filepath)
+
+
