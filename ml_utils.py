@@ -8,6 +8,9 @@ from math import log10, exp
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from sklearn.ensemble import RandomForestClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -111,18 +114,19 @@ class tsne:
 			plt.savefig(filepath)
 
 class log_reg_model:
-	def __init__(self, data_frame,class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False, n_jobs=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+	def __init__(self, data_frame,class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None): #data_frame rows are samples, columns are variable names
 		self.y = data_frame[class_col]
 		if scalar_cols is None:
 			self.X = data_frame.drop(columns=class_col)
 		else:
 			self.X = data_frame[scalar_cols]
 		self.scale_factors = np.max(self.X,axis=0)
-		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y.values)
+		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y,sample_weight=sample_weight)
 		self.intercept = self.model.intercept_[0]
 		self.coefficients = self.model.coef_[0]/self.scale_factors
 		self.class_labels = self.model.classes_
 		self.scalar_cols = scalar_cols
+		self.class_col = class_col
 	def predict_proba(self,x):
 		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
 	def predict_log_proba(self,x):
@@ -130,13 +134,55 @@ class log_reg_model:
 	def predictors(self,x):
 		frame = pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=self.class_labels)
 		return frame[frame.columns[1]] - frame[frame.columns[0]]
-	def plot(self,filepath=None):
-		al=sns.color_palette('husl',len(y.unique())+1)
-		plt.close('all')
-		fig,axes=plt.subplots(len(y.unique())+1,sharex='col')
-		if filepath is None:
-			plt.show()
+	def predict(self,x):
+		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
+	def confusion_matrix(self,x,sample_weight=None):
+		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
+	def decision_function(self,x):
+		return pd.DataFrame(self.model.decision_function(x[self.scalar_cols]/self.scale_factors),index=x.index)
+
+class knn_model:
+	def __init__(self,data_frame,class_col=None,scalar_cols=None,n_neighbors=5, weights='uniform', algorithm='auto', leaf_size=30, p=2, metric='minkowski', metric_params=None, n_jobs=None): #data_frame rows are samples, columns are variable names;
+		self.y = data_frame[class_col]
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
 		else:
-			plt.savefig(filepath)
+			self.X = data_frame[scalar_cols]
+		self.scale_factors = np.max(self.X,axis=0)
+		self.model = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, algorithm=algorithm, leaf_size=leaf_size, p=p, metric=metric, metric_params=metric_params, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y)
+		self.scalar_cols = scalar_cols
+		self.class_col = class_col
+		self.class_labels = sorted(data_frame[class_col].unique())
+	def predict_proba(self,x):
+		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+	def predict(self,x):
+		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
+	def confusion_matrix(self,x,sample_weight=None):
+		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
+
+class random_forest_model:
+	def __init__(self,data_frame,class_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None): #data_frame rows are samples, columns are variable names;
+		self.y = data_frame[class_col]
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
+		else:
+			self.X = data_frame[scalar_cols]
+		self.scale_factors = np.max(self.X,axis=0)
+		self.model = RandomForestClassifier(n_estimators=n_estimators,criterion=criterion,max_depth=max_depth,min_samples_split=min_samples_split,min_samples_leaf=min_samples_leaf,min_weight_fraction_leaf=min_weight_fraction_leaf,max_features=max_features,max_leaf_nodes=max_leaf_nodes,min_impurity_decrease=min_impurity_decrease,min_impurity_split=min_impurity_split,bootstrap=bootstrap,oob_score=oob_score,n_jobs=n_jobs,random_state=random_state,verbose=verbose,warm_start=warm_start,class_weight=class_weight).fit(self.X/self.scale_factors,self.y,sample_weight=sample_weight)
+		self.scalar_cols = scalar_cols
+		self.class_col = class_col
+		self.class_labels = self.model.classes_
+		self.feature_importances = self.model.feature_importances_
+	def predict(self,x):
+		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
+	def predict_proba(self,x):
+		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+	def predict_log_proba(self,x):
+		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
+	def confusion_matrix(self,x,sample_weight=None):
+		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
 
 
