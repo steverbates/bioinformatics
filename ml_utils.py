@@ -11,34 +11,40 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
+from keras.models import Sequential
+from keras.layers import Dense
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 
 
-def log_fano(array):
+def log10_fano(array):
 	 return log10(np.nanvar(array)/np.nanmean(array)) #use variations of np.mean and np.var that leave out NaN entries
+
+
 
 def filter_overdispersed(frame,nbins=20,top_n=500): #input should be dataframe of log-transformed expression values, with columns as gene names and each row representing a cell
 	frame = frame.transpose() #for ease of calculation
 	derived = pd.DataFrame(frame.apply(np.mean, axis=1),columns=['mean']) #create new data frame for derived columns
 	derived['bin'] = pd.cut(derived['mean'], bins=nbins,labels=False)
-	derived['log_fano'] = frame.apply(log_fano, axis=1)
+	derived['log10_fano'] = frame.apply(log10_fano, axis=1)
 	bin_mean, bin_std = {},{}
 	for i in range(nbins):
-		bin_pop = derived[derived.bin == i].log_fano
+		bin_pop = derived[derived.bin == i].log10_fano
 		bin_mean[i] = np.mean(bin_pop)
 		bin_std[i] = np.std(bin_pop)
-	derived['dispersion'] = derived.apply(lambda x: (x.log_fano - bin_mean[x.bin])/bin_std[x.bin],axis=1)
+	derived['dispersion'] = derived.apply(lambda x: (x.log10_fano - bin_mean[x.bin])/bin_std[x.bin],axis=1)
 	derived['dispersion_rank'] = derived.dispersion.rank()
 	return frame[derived.dispersion_rank<(top_n+1)].transpose() #in cases of tie at the top_nth position, assures that at least top_n genes will be found.  Transpose returned so input and returned dataframes have same axes
+
 
 
 def logistic(t):
 	return 1/(1+exp(-t))
 
 
-def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title='ROC Curve'): #to be called as method on classification model functions
+
+def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title='ROC Curve'): #to be called as method on binary classification models
 	if len(model.class_labels)!=2:
 		return None
 	if x is None: #x is test data set including true class assignments; if no x provided; calculation is made on model's training set
@@ -61,6 +67,8 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 		plt.savefig(filepath)
 	return area
 
+
+
 class pca:
 	def __init__(self, data_frame,n_components=None,categ_col=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
 		self.data = data_frame
@@ -79,6 +87,8 @@ class pca:
 			plt.show()
 		else:
 			plt.savefig(filepath)
+
+
 
 class tsne:
 	def __init__(self,data_frame,categ_col=None): #data_frame rows are samples, columns are variable names
@@ -105,12 +115,12 @@ class tsne:
 
 
 
-
-class log_reg_model:
-	def __init__(self, data_frame,class_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True): #data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set input variables and targets for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  All other parameters defaults to pass to LogisticRegression class.
+class log_reg_classifier:
+	def __init__(self, data_frame,class_col,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
 		self.y = data_frame[class_col]
 		if scalar_cols is None:
 			self.X = data_frame.drop(columns=class_col)
+			scalar_cols = self.X.columns
 		else:
 			self.X = data_frame[scalar_cols]
 		if rescale:
@@ -121,34 +131,55 @@ class log_reg_model:
 		self.intercept = self.model.intercept_[0]
 		self.coefficients = self.model.coef_[0]/self.scale_factors
 		self.class_labels = self.model.classes_
-		self.pos_label = self.class_labels[1]
+		if len(self.class_labels) == 2:
+			if pos_label is None or pos_label not in self.class_labels:
+				self.pos_label = self.class_labels[1]
+			else:
+				self.pos_label = pos_label
+				if self.class_labels[1] != pos_label:
+					self.class_labels[0] = self.class_labels[1]
+					self.class_labels[1] = pos_label
 		self.scalar_cols = scalar_cols
 		self.class_col = class_col
-	def predict_proba(self,x):
-		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def predict_log_proba(self,x):
-		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
-	def predictors(self,x):
-		frame = pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=self.class_labels)
-		return frame[frame.columns[1]] - frame[frame.columns[0]]
-	def predict(self,x):
+	def predict(self,x=None):
+		if x is None:
+			x = self.X
 		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def confusion_matrix(self,x,sample_weight=None):
-		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+	def predict_proba(self,x=None):
+		if x is None:
+			x = self.X
+		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+	def predict_log_proba(self,x=None):
+		if x is None:
+			x = self.X
+		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
+	def confusion_matrix(self,x=None,sample_weight=None):
+		if x is None:
+			y_true, y_pred = self.y, self.predict(self.X)
+		else:
+			y_true, y_pred = x[self.class_col], self.predict(x)
+		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
 		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
-	def decision_function(self,x):
-		return pd.DataFrame(self.model.decision_function(x[self.scalar_cols]/self.scale_factors),index=x.index)
 	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
 		if title is None:
 			title = '%s Logistic Regression Model ROC Curve'%(self.class_col)
 		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
+	def decision_function(self,x):
+		return pd.DataFrame(self.model.decision_function(x[self.scalar_cols]/self.scale_factors),index=x.index)
+	def predictors(self,x=None):
+		if x is None:
+			x = self.X
+		frame = pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=self.class_labels)
+		return frame[frame.columns[1]] - frame[frame.columns[0]]
 
 
-class knn_model:
-	def __init__(self,data_frame,class_col=None,scalar_cols=None,n_neighbors=5, weights='uniform', algorithm='auto', leaf_size=30, p=2, metric='minkowski', metric_params=None, n_jobs=None,rescale=True): #Supervised nearest neighbors model for classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set input variables and targets for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  All other parameters defaults to pass to KNeighborsClassifier class.
+
+class knn_classifier:
+	def __init__(self,data_frame,class_col,scalar_cols=None,n_neighbors=5, weights='uniform', algorithm='auto', leaf_size=30, p=2, metric='minkowski', metric_params=None, n_jobs=None,rescale=True,pos_label=None): #Supervised nearest neighbors model for classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters defaults to pass to KNeighborsClassifier class.
 		self.y = data_frame[class_col]
 		if scalar_cols is None:
 			self.X = data_frame.drop(columns=class_col)
+			scalar_cols = self.X.columns
 		else:
 			self.X = data_frame[scalar_cols]
 		if rescale:
@@ -159,14 +190,29 @@ class knn_model:
 		self.scalar_cols = scalar_cols
 		self.class_col = class_col
 		self.class_labels = sorted(data_frame[class_col].unique())
-		self.pos_label = self.class_labels[1]
+		if len(self.class_labels) == 2:
+			if pos_label is None or pos_label not in self.class_labels:
+				self.pos_label = self.class_labels[1]
+			else:
+				self.pos_label = pos_label
+				if self.class_labels[1] != pos_label:
+					self.class_labels[0] = self.class_labels[1]
+					self.class_labels[1] = pos_label
 		self.n_neighbors = n_neighbors
-	def predict_proba(self,x):
-		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def predict(self,x):
+	def predict(self,x=None):
+		if x is None:
+			x = self.X
 		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def confusion_matrix(self,x,sample_weight=None):
-		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+	def predict_proba(self,x=None):
+		if x is None:
+			x = self.X
+		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+	def confusion_matrix(self,x=None,sample_weight=None):
+		if x is None:
+			y_true, y_pred = self.y, self.predict(self.X)
+		else:
+			y_true, y_pred = x[self.class_col], self.predict(x)
+		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
 		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
 	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
 		if title is None:
@@ -174,11 +220,13 @@ class knn_model:
 		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
 
 
-class random_forest_model:
-	def __init__(self,data_frame,class_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True): #data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set input variables and targets for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  All other parameters defaults to pass to RandomForestClassifier class.
+
+class random_forest_classifier:
+	def __init__(self,data_frame,class_col,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters defaults to pass to RandomForestClassifier class.
 		self.y = data_frame[class_col]
 		if scalar_cols is None:
 			self.X = data_frame.drop(columns=class_col)
+			scalar_cols = self.X.columns
 		else:
 			self.X = data_frame[scalar_cols]
 		if rescale:
@@ -189,25 +237,133 @@ class random_forest_model:
 		self.scalar_cols = scalar_cols
 		self.class_col = class_col
 		self.class_labels = self.model.classes_
-		self.pos_label = self.class_labels[1]
+		if len(self.class_labels) == 2:
+			if pos_label is None or pos_label not in self.class_labels:
+				self.pos_label = self.class_labels[1]
+			else:
+				self.pos_label = pos_label
+				if self.class_labels[1] != pos_label:
+					self.class_labels[0] = self.class_labels[1]
+					self.class_labels[1] = pos_label
 		self.feature_importances = self.model.feature_importances_
 		if oob_score:
 			self.oob_score = self.model.oob_score_
 			self.oob_decision_function = self.model.oob_decision_function_
-	def predict(self,x):
+	def predict(self,x=None):
+		if x is None:
+			x = self.X
 		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def predict_proba(self,x):
+	def predict_proba(self,x=None):
+		if x is None:
+			x = self.X
 		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def predict_log_proba(self,x):
+	def predict_log_proba(self,x=None):
+		if x is None:
+			x = self.X
 		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
-	def confusion_matrix(self,x,sample_weight=None):
-		cm = confusion_matrix(x[self.class_col],self.predict(x),labels=self.class_labels,sample_weight=sample_weight)
+	def confusion_matrix(self,x=None,sample_weight=None):
+		if x is None:
+			y_true, y_pred = self.y, self.predict(self.X)
+		else:
+			y_true, y_pred = x[self.class_col], self.predict(x)
+		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
 		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
 	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
 		if title is None:
 			title = '%s Random Forest Model ROC Curve'%(self.class_col)
 		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
 
+
+
+class dense_network_classifier:
+	def __init__(self,data_frame,class_col,scalar_cols=None,units=[16],activation='relu',use_bias=True,kernel_initializer='glorot_uniform',bias_initializer='zeros',kernel_regularizer=None,bias_regularizer=None,activity_regularizer=None,kernel_constraint=None,bias_constraint=None,optimizer='rmsprop',metrics=['accuracy'],epochs=10,batch_size=None,verbose=1,validation_split=0.15,validation_data=None,class_weight=None,sample_weight=None,steps_per_epoch=None,validation_steps=None,rescale=True,pos_label=None): #Neural network model for classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probality in sigmoid output function) in two-way classification. Assumption is that there are at least two densely connected layers in sequence, with either a softmax or signmoid activation in the final layer, to ouput probabilities.  The other layers are all assumed to have the same activation, with sizes set by the list of items in the units paramater. All other parameters defaults to pass to keras model and layers.
+		self.y = data_frame[class_col]
+		self.y_one_hot = pd.get_dummies(self.y)
+		if scalar_cols is None:
+			self.X = data_frame.drop(columns=class_col)
+			scalar_cols = self.X.columns
+		else:
+			self.X = data_frame[scalar_cols]
+		if rescale:
+			def scale_calc(series):
+				a = np.max(series)
+				if a == 0:
+					return 1
+				else:
+					return a
+			self.scale_factors = self.X.apply(scale_calc,axis=0)
+		else:
+			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
+		self.scalar_cols, self.class_col = scalar_cols, class_col
+		self.class_labels = self.y_one_hot.columns
+		if len(self.class_labels) == 2:
+			if pos_label is None or pos_label not in self.class_labels:
+				self.pos_label = self.class_labels[1]
+			else:
+				self.pos_label = pos_label
+				if self.class_labels[1] != pos_label:
+					self.class_labels[0] = self.class_labels[1]
+					self.class_labels[1] = pos_label
+		self.model = Sequential()
+		self.model.add(Dense(units=units[0],activation=activation,use_bias=use_bias,kernel_initializer=kernel_initializer,bias_initializer=bias_initializer,kernel_regularizer=kernel_regularizer,bias_regularizer=bias_regularizer,activity_regularizer=activity_regularizer,kernel_constraint=kernel_constraint,bias_constraint=bias_constraint,input_shape=(len(scalar_cols),)))
+		if len(units) > 1:
+			for u in units[1:]:
+				self.model.add(Dense(units=u,activation=activation,use_bias=use_bias,kernel_initializer=kernel_initializer,bias_initializer=bias_initializer,kernel_regularizer=kernel_regularizer,bias_regularizer=bias_regularizer,activity_regularizer=activity_regularizer,kernel_constraint=kernel_constraint,bias_constraint=bias_constraint))
+		if len(self.class_labels) > 2:
+			self.model.add(Dense(units=len(self.class_labels),activation='softmax'))
+			loss = 'categorical_crossentropy' #to make sure label order stays the same
+			self.model.compile(optimizer=optimizer,loss=loss,metrics=metrics)
+			self.history = self.model.fit(self.X/self.scale_factors,self.y_one_hot,epochs=epochs,batch_size=batch_size,verbose=verbose,validation_split=validation_split,validation_data=validation_data,class_weight=class_weight,sample_weight=sample_weight,steps_per_epoch=steps_per_epoch,validation_steps=validation_steps)
+		else:
+			self.model.add(Dense(units=1,activation='sigmoid'))
+			loss = 'binary_crossentropy'
+			self.model.compile(optimizer=optimizer,loss=loss,metrics=metrics)
+			d = {label:i for i,label in enumerate(self.class_labels)}
+			self.history = self.model.fit(self.X/self.scale_factors,self.y.map(d),epochs=epochs,batch_size=batch_size,verbose=verbose,validation_split=validation_split,validation_data=validation_data,class_weight=class_weight,sample_weight=sample_weight,steps_per_epoch=steps_per_epoch,validation_steps=validation_steps)
+		self.loss, self.acc, self.epochs = self.history.history['loss'], self.history.history['acc'], range(1,epochs+1)
+		self.validation_split, self.validation_data, self.batch_size = validation_split, validation_data, batch_size
+		if validation_split > 0.0 or validation_data is not None:
+			self.val_loss, self.val_acc = self.history.history['val_loss'], self.history.history['val_acc']
+	def plot_history(self,filepath=None):
+		sns.set(palette='bright')
+		fig,axes = plt.subplots(2,sharex='col')
+		axes[1].plot(self.epochs, self.acc, 'oc', label='Training')
+		axes[0].plot(self.epochs,self.loss, 'oc', label='Training')
+		if self.validation_split > 0.0 or self.validation_data is not None:
+			axes[1].plot(self.epochs, self.val_acc, '-g', label='Validation')
+			axes[0].plot(self.epochs, self.val_loss, '-g', label='Validation')
+		axes[0].legend(bbox_to_anchor=(0., 1.02),loc='lower center',ncol=2)	
+		axes[0].set_ylabel('Loss')
+		axes[1].set_ylabel('Accuracy')
+		plt.xlabel('Epochs')
+		if filepath is None:
+			plt.show()
+		else:
+			plt.savefig(filepath)
+	def predict(self,x=None,batch_size=32,verbose=1):
+		if x is None:
+			x = self.X
+		return pd.DataFrame(self.model.predict_classes(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose),index=x.index,columns=['Predicted Class']).applymap(lambda i: self.class_labels[i])
+	def predict_proba(self,x=None,batch_size=None,verbose=1,steps=None):
+		if x is None:
+			x = self.X
+		if len(self.class_labels) > 2:
+			return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose,steps=steps),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
+		else:
+			p = self.model.predict(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose,steps=steps).flatten()
+			q = 1-p
+			return pd.DataFrame({'P('+str(self.class_labels[0])+')':q,'P('+str(self.class_labels[1])+')':p},index=x.index)
+	def confusion_matrix(self,x=None,sample_weight=None):
+		if x is None:
+			y_true, y_pred = self.y, self.predict()
+		else:
+			y_true, y_pred = x[self.class_col], self.predict(x)
+		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
+		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
+	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
+		if title is None:
+			title = '%s Dense Neural Network Classifier ROC Curve'%(self.class_col,)
+		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
 
 
 
@@ -243,7 +399,3 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 			y.append(Y[order])
 		return x,y
 
-#Untested after this point:
-
-
-#sns.heatmap
