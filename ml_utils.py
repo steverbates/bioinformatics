@@ -1,25 +1,35 @@
 '''
 Library to hold my versions of workhorse functions and classes for machine learning analysis of bioinformatic data.
 '''
-import pandas as pd
-import numpy as np
-import random
-from math import log10, exp
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
-from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
-from sklearn.ensemble import RandomForestClassifier
-from keras.models import Sequential
-from keras.layers import Dense
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import random
 import seaborn as sns
+from keras.layers import Dense
+from keras.models import Sequential
+from math import log10, exp
+from matplotlib.patches import Patch
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.manifold import TSNE
+from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
+from sklearn.neighbors import KNeighborsClassifier
 
 
 
 def log10_fano(array):
 	 return log10(np.nanvar(array)/np.nanmean(array)) #use variations of np.mean and np.var that leave out NaN entries
+
+
+
+def scale_factor_calc(series): #for inputting data into models, to enable rescaling of data to maximum value for each variable; avoids division by zero in case of variables which are zero for all samples
+	a = np.max(series)
+	if a == 0:
+		return 1
+	else:
+		return a
 
 
 
@@ -44,7 +54,7 @@ def logistic(t):
 
 
 
-def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title='ROC Curve'): #to be called as method on binary classification models
+def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title='ROC Curve'): #to be called as method on binary classifiers
 	if len(model.class_labels)!=2:
 		return None
 	if x is None: #x is test data set including true class assignments; if no x provided; calculation is made on model's training set
@@ -63,15 +73,21 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 	plt.title(title)
 	if filepath is None:
 		plt.show()
+		plt.close('fig')
 	else:
 		plt.savefig(filepath)
+		plt.close('fig')
 	return area
 
 
 
 class pca:
-	def __init__(self, data_frame,n_components=None,categ_col=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
-		self.data = data_frame
+	def __init__(self,data_frame,categ_col=None,n_components=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		if categ_col is None:
+			self.data = data_frame
+		else:
+			self.categ_col = categ_col
+			self.data = data_frame.drop(columns=categ_col)			
 		pca = PCA(n_components=n_components,copy=False)
 		if n_components is None:
 			self.n_components = len(self.data.columns)
@@ -79,39 +95,89 @@ class pca:
 			self.n_components = n_components
 		self.reduced = pd.DataFrame(pca.fit_transform(self.data),index=self.data.index,columns=['PC%i'%i for i in range(self.n_components)])
 		self.components = pd.DataFrame(pca.components_,index=['PC%i'%i for i in range(self.n_components)],columns=self.data.columns)
-	def plot(self,filepath=None):
-		plt.clf()
-		sns.set()
-		self.reduced.plot(x='PC0',y='PC1',kind='scatter')
+		if categ_col is not None:
+			self.reduced[categ_col] = data_frame[categ_col]
+	def plot(self,filepath=None,legend=True,highlights=None):
+		with sns.axes_style('darkgrid'):
+			fig, ax = plt.subplots()
+		try:
+			categories = self.reduced[self.categ_col]
+			if highlights is None:
+				pal, handles = sns.hls_palette(len(categories.unique()),s=1,l=0.35), []
+				for i, category in enumerate(sorted(categories.unique())):
+					df = self.reduced[categories == category]
+					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
+			else:
+				lowlights, handles = [i for i in categories.unique() if i not in highlights], []
+				pal, pal2 = sns.hls_palette(len(highlights),s=1,l=0.35), sns.hls_palette(len(lowlights),s=0.15,l=0.8)
+				for i, category in enumerate(lowlights):
+					df = self.reduced[categories == category]
+					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal2[i],ax=ax)
+				for i, category in enumerate(highlights):
+					df = self.reduced[categories == category]
+					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
+			if legend:
+				plt.legend(handles=handles,bbox_to_anchor=(1.005,1),loc='upper left',borderaxespad=0.)
+				plt.subplots_adjust(left=0.05,right=0.9,bottom=0.1,top=0.9)
+		except AttributeError:
+			self.reduced.plot.scatter(x='PC0',y='PC1',s=6,ax=ax,color='k') 
 		if filepath is None:
 			plt.show()
+			plt.close('fig')
 		else:
 			plt.savefig(filepath)
+			plt.close('fig')
 
 
 
 class tsne:
-	def __init__(self,data_frame,categ_col=None): #data_frame rows are samples, columns are variable names
+	def __init__(self,data_frame,categ_col=None,perplexity=30.0,early_exaggeration=12.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=1): #data_frame rows are samples, columns are variable names
 		if categ_col is None:
 			self.data = data_frame
-		elif categ_col in data_frame.columns:
-			self.categ_col = data_frame[categ_col]
+		else:
+			self.categ_col = categ_col
 			self.data = data_frame.drop(columns=categ_col)
-	def embed(self,perplexity=30.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=0): 
-		self.perplexity = perplexity
-		self.learning_rate = learning_rate
-		self.metric =metric
-		self.init =init
-		embedded = TSNE(perplexity=perplexity,learning_rate=learning_rate,metric=metric,init=init,verbose=verbose).fit_transform(self.data)
-		self.embedding = pd.DataFrame(embedded,index=self.data.index,columns=['tSNE 1','tSNE 2'])
-	def plot(self,filepath=None):
-		plt.clf()
-		sns.set()
-		self.embedding.plot(x='tSNE 1',y='tSNE 2',kind='scatter')
+		self.perplexity, self.learning_rate, self.metric, self.init = perplexity, learning_rate, metric, init
+		self.embedding = pd.DataFrame(TSNE(perplexity=perplexity,early_exaggeration=early_exaggeration,learning_rate=learning_rate,metric=metric,init=init,verbose=verbose).fit_transform(self.data),index=self.data.index,columns=['tSNE 1','tSNE 2'])
+		if categ_col is not None:
+			self.embedding[categ_col] = data_frame[categ_col]
+	def to_csv(self,filepath):
+		self.embedding.to_csv(filepath)
+	def plot(self,filepath=None,legend=True,highlights=None):
+		with sns.axes_style('darkgrid'):
+			fig, ax = plt.subplots()
+		try:
+			categories = self.embedding[self.categ_col]
+			if highlights is None:
+				pal, handles = sns.hls_palette(len(categories.unique()),s=1,l=0.35), []
+				for i, category in enumerate(sorted(categories.unique())):
+					df = self.embedding[categories == category]
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
+			else:
+				lowlights, handles = [i for i in categories.unique() if i not in highlights], []
+				pal, pal2 = sns.hls_palette(len(highlights),s=1,l=0.35), sns.hls_palette(len(lowlights),s=0.15,l=0.8)
+				for i, category in enumerate(lowlights):
+					df = self.embedding[categories == category]
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal2[i],ax=ax)
+				for i, category in enumerate(highlights):
+					df = self.embedding[categories == category]
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))				
+			if legend:
+				plt.legend(handles=handles,bbox_to_anchor=(1.005,1),loc='upper left',borderaxespad=0.)
+				plt.subplots_adjust(left=0.05,right=0.9,bottom=0.1,top=0.9)
+		except AttributeError:
+			self.embedding.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,ax=ax,color='k')
 		if filepath is None:
 			plt.show()
+			plt.close('fig')
 		else:
 			plt.savefig(filepath)
+			plt.close('fig')
+
 
 
 
@@ -285,13 +351,7 @@ class dense_network_classifier:
 		else:
 			self.X = data_frame[scalar_cols]
 		if rescale:
-			def scale_calc(series):
-				a = np.max(series)
-				if a == 0:
-					return 1
-				else:
-					return a
-			self.scale_factors = self.X.apply(scale_calc,axis=0)
+			self.scale_factors = self.X.apply(scale_factor_calc,axis=0)
 		else:
 			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
 		self.scalar_cols, self.class_col = scalar_cols, class_col
@@ -338,8 +398,10 @@ class dense_network_classifier:
 		plt.xlabel('Epochs')
 		if filepath is None:
 			plt.show()
+			plt.close('fig')
 		else:
 			plt.savefig(filepath)
+			plt.close('fig')
 	def predict(self,x=None,batch_size=32,verbose=1):
 		if x is None:
 			x = self.X
@@ -367,7 +429,7 @@ class dense_network_classifier:
 
 
 
-#A helper function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
+#Function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
 def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  Fold parameter used to generate a set of samples for cross-validation
 	n,p = len(negatives),len(positives)
 	if fold==1:
