@@ -1,2 +1,2 @@
 # bioinformatics
-ML projects using sequencing data
+Machine learning projects using bioinformatic data
