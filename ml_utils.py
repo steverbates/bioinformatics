@@ -1,5 +1,5 @@
 '''
-Library to hold my versions of workhorse functions and classes for machine learning analysis of bioinformatic data.
+Library to hold my versions of common functions and classes for machine learning analysis of bioinformatic data.
 '''
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +9,7 @@ import seaborn as sns
 from keras.layers import Dense
 from keras.models import Sequential
 from math import log10, exp
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
@@ -73,11 +74,58 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 	plt.title(title)
 	if filepath is None:
 		plt.show()
-		plt.close('fig')
+		plt.close()
 	else:
 		plt.savefig(filepath)
-		plt.close('fig')
+		plt.close()
 	return area
+
+
+
+def heatmap(data_frame,filepath=None,categ_col=None,title=None,cmap=sns.diverging_palette(255,133,l=60, n=7,center='dark'),center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hiearchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
+	if categ_col is None:
+		if not dendrogram:
+			fig, ax = plt.subplots()
+			sns.heatmap(data_frame,cmap=cmap,center=center,ax=ax)
+		else:
+			g = sns.clustermap(data_frame,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
+			fig, ax = g.fig, g.ax_heatmap
+		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
+	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, sorting rows so that each category is contiguous
+		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
+		if -1 in categories:
+			categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+		else:
+			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
+			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
+		if not dendrogram:
+			fig, (ax2,ax) = plt.subplots(1,2,gridspec_kw={'width_ratios':[1,23],'wspace':0.01})
+			sns.heatmap(data_frame[[categ_col]].sort_values(categ_col),cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
+			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,yticklabels=False,ax=ax)
+			ax2.set_xlabel('')
+			ncol = 1 + len(handles)//35
+			fig.subplots_adjust(left=0.11*ncol,right=0.97)
+		else:
+			g = sns.clustermap(data_frame.drop(columns=categ_col),cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
+			fig, ax = g.fig, g.ax_heatmap
+			ax.set_yticks([])
+			ncol = 1 + len(handles)//62
+			fig.subplots_adjust(left=0.07*ncol,right=0.97)
+		fig.legend(handles=handles,bbox_to_anchor=(0,0.5),loc='center left',borderaxespad=0.,fontsize=6,ncol=ncol)
+	ax.set_xlabel('')
+	ax.set_xticklabels(ax.get_xmajorticklabels(),fontsize=6)
+	if title is not None:
+		fig.suptitle(title)
+	if filepath is None:
+		plt.show(fig)
+	elif dendrogram:
+		g.savefig(filepath) #clustergrid object has its own savefig method which should be used rather than fig's method, to avoid cropping dendrograms
+	else:
+		fig.savefig(filepath)
+	plt.close(fig)
 
 
 
@@ -86,7 +134,6 @@ class pca:
 		if categ_col is None:
 			self.data = data_frame
 		else:
-			self.categ_col = categ_col
 			self.data = data_frame.drop(columns=categ_col)			
 		pca = PCA(n_components=n_components,copy=False)
 		if n_components is None:
@@ -97,87 +144,122 @@ class pca:
 		self.components = pd.DataFrame(pca.components_,index=['PC%i'%i for i in range(self.n_components)],columns=self.data.columns)
 		if categ_col is not None:
 			self.reduced[categ_col] = data_frame[categ_col]
-	def plot(self,filepath=None,legend=True,highlights=None):
+	def plot(self,filepath=None,categ_col=None,highlights=None,title=None):
 		with sns.axes_style('darkgrid'):
 			fig, ax = plt.subplots()
-		try:
-			categories = self.reduced[self.categ_col]
-			if highlights is None:
-				pal, handles = sns.hls_palette(len(categories.unique()),s=1,l=0.35), []
-				for i, category in enumerate(sorted(categories.unique())):
-					df = self.reduced[categories == category]
-					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
+			if title is not None:
+				ax.set_title(title)
+		if categ_col is None:
+			self.reduced.plot.scatter(x='PC0',y='PC1',s=4,ax=ax,color='k')
+		else:
+			if type(categ_col) == str:
+				categ_col = self.reduced[categ_col]
 			else:
-				lowlights, handles = [i for i in categories.unique() if i not in highlights], []
-				pal, pal2 = sns.hls_palette(len(highlights),s=1,l=0.35), sns.hls_palette(len(lowlights),s=0.15,l=0.8)
-				for i, category in enumerate(lowlights):
-					df = self.reduced[categories == category]
-					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal2[i],ax=ax)
-				for i, category in enumerate(highlights):
-					df = self.reduced[categories == category]
-					df.plot.scatter(x='PC0',y='PC1',s=6,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
-			if legend:
-				plt.legend(handles=handles,bbox_to_anchor=(1.005,1),loc='upper left',borderaxespad=0.)
-				plt.subplots_adjust(left=0.05,right=0.9,bottom=0.1,top=0.9)
-		except AttributeError:
-			self.reduced.plot.scatter(x='PC0',y='PC1',s=6,ax=ax,color='k') 
+				categ_col = pd.Series(categ_col,index=self.reduced.index)
+			categories, handles = sorted(categ_col.unique()), []
+			if -1 in categories:
+				categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+				df = self.embedding[categ_col == -1]
+				if highlights is None:
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=(0,0,0),ax=ax)
+					handles.append(Patch(color=(0,0,0),label=str(-1)+' (%i)'%len(df.index)))
+				else:
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=(0.8,0.8,0.8),ax=ax)
+			pal = sns.hls_palette(len(categories),s=1,l=0.35)
+			pal = [pal[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
+			if highlights is None:
+				for i, category in enumerate(categories):
+					df = self.reduced[categ_col == category]
+					df.plot.scatter(x='PC0',y='PC1',s=4,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+			else:
+				pal2 = sns.hls_palette(len(categories),s=0.15,l=0.8)
+				pal2 = [pal2[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
+				for i, category in enumerate(categories):
+					df = self.reduced[categ_col == category]
+					if category in highlights:
+						df.plot.scatter(x='PC0',y='PC1',s=4,color=pal[i],ax=ax)
+						handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+					else:
+						df.plot.scatter(x='PC0',y='PC1',s=4,color=pal2[i],ax=ax)
+			ncol = 1 + len(handles)//35
+			fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',borderaxespad=0.,fontsize=6,ncol=ncol)
+			fig.subplots_adjust(left=0.07,right=(1.01-0.11*ncol))
 		if filepath is None:
 			plt.show()
-			plt.close('fig')
 		else:
 			plt.savefig(filepath)
-			plt.close('fig')
+		plt.close(fig)
 
 
 
 class tsne:
-	def __init__(self,data_frame,categ_col=None,perplexity=30.0,early_exaggeration=12.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=1): #data_frame rows are samples, columns are variable names
-		if categ_col is None:
-			self.data = data_frame
+	def __init__(self,data_frame,categ_col=None,perplexity=30.0,early_exaggeration=12.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=1): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
+		if type(data_frame) == str: #if data frame argument is a string, this is interpreted as a filepath to load a previously saved embedding from a csv, and all other arguments are overriden.
+			filepath = data_frame
+			self.embedding = pd.read_csv(filepath,header=[0,1],index_col=0)
+			header = self.embedding.columns[0][0].split(', ') #The attributes in the header aren't strictly needed but extracting them provides a useful check on reading a csv produced by saving a previous tsne object.
+			self.perplexity, self.early_exaggeration, self.learning_rate, self.metric, self.init = float(header[0].split(': ')[1]), float(header[1].split(': ')[1]), float(header[2].split(': ')[1]), header[3].split(': ')[1], header[4].split(': ')[1]
+			self.embedding.columns = self.embedding.columns.droplevel()
 		else:
-			self.categ_col = categ_col
-			self.data = data_frame.drop(columns=categ_col)
-		self.perplexity, self.learning_rate, self.metric, self.init = perplexity, learning_rate, metric, init
-		self.embedding = pd.DataFrame(TSNE(perplexity=perplexity,early_exaggeration=early_exaggeration,learning_rate=learning_rate,metric=metric,init=init,verbose=verbose).fit_transform(self.data),index=self.data.index,columns=['tSNE 1','tSNE 2'])
-		if categ_col is not None:
-			self.embedding[categ_col] = data_frame[categ_col]
-	def to_csv(self,filepath):
-		self.embedding.to_csv(filepath)
-	def plot(self,filepath=None,legend=True,highlights=None):
+			if categ_col is None:
+				self.data = data_frame
+			else:
+				self.data = data_frame.drop(columns=categ_col)
+			self.perplexity, self.early_exaggeration, self.learning_rate, self.metric, self.init = perplexity, early_exaggeration, learning_rate, metric, init
+			self.embedding = pd.DataFrame(TSNE(perplexity=perplexity,early_exaggeration=early_exaggeration,learning_rate=learning_rate,metric=metric,init=init,verbose=verbose).fit_transform(self.data),index=self.data.index,columns=['tSNE 1','tSNE 2'])
+			if categ_col is not None:
+				self.embedding[categ_col] = data_frame[categ_col]
+	def to_csv(self,filepath): #since tsne nondeterministic, useful to be able to save embeddings that look particularly good for later use
+		header = 'perplexity: '+str(self.perplexity)+', early_exaggeration: '+str(self.early_exaggeration)+', learning_rate: '+str(self.learning_rate)+', metric: '+str(self.metric)+', init: '+str(self.init)
+		pd.DataFrame(self.embedding.values,index=self.embedding.index,columns=pd.MultiIndex.from_arrays([[header]+[' ' for i in range(len(self.embedding.columns)-1)],self.embedding.columns])).to_csv(filepath) #MultiIndex trick to effectively add a header row
+	def plot(self,filepath=None,categ_col=None,highlights=None,title=None):
 		with sns.axes_style('darkgrid'):
 			fig, ax = plt.subplots()
-		try:
-			categories = self.embedding[self.categ_col]
-			if highlights is None:
-				pal, handles = sns.hls_palette(len(categories.unique()),s=1,l=0.35), []
-				for i, category in enumerate(sorted(categories.unique())):
-					df = self.embedding[categories == category]
-					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))
+			if title is not None:
+				ax.set_title(title)
+		if categ_col is None:
+			self.embedding.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,ax=ax,color='k')
+		else:
+			if type(categ_col) == str:
+				categ_col = self.embedding[categ_col]
 			else:
-				lowlights, handles = [i for i in categories.unique() if i not in highlights], []
-				pal, pal2 = sns.hls_palette(len(highlights),s=1,l=0.35), sns.hls_palette(len(lowlights),s=0.15,l=0.8)
-				for i, category in enumerate(lowlights):
-					df = self.embedding[categories == category]
-					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal2[i],ax=ax)
-				for i, category in enumerate(highlights):
-					df = self.embedding[categories == category]
-					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(category)+': n=%i'%len(df.index)))				
-			if legend:
-				plt.legend(handles=handles,bbox_to_anchor=(1.005,1),loc='upper left',borderaxespad=0.)
-				plt.subplots_adjust(left=0.05,right=0.9,bottom=0.1,top=0.9)
-		except AttributeError:
-			self.embedding.plot.scatter(x='tSNE 1',y='tSNE 2',s=6,ax=ax,color='k')
+				categ_col = pd.Series(categ_col,index=self.embedding.index)
+			categories, handles = sorted(categ_col.unique()), []
+			if -1 in categories:
+				categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+				df = self.embedding[categ_col == -1]
+				if highlights is None:
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=(0,0,0),ax=ax)
+					handles.append(Patch(color=(0,0,0),label=str(-1)+' (%i)'%len(df.index)))
+				else:
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=(0.8,0.8,0.8),ax=ax)
+			pal = sns.hls_palette(len(categories),s=1,l=0.35)
+			pal = [pal[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
+			if highlights is None:
+				for i, category in enumerate(categories):
+					df = self.embedding[categ_col == category]
+					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal[i],ax=ax)
+					handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+			else:
+				pal2 = sns.hls_palette(len(categories),s=0.15,l=0.8)
+				pal2 = [pal2[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
+
+				for i, category in enumerate(categories):
+					df = self.embedding[categ_col == category]
+					if category in highlights:
+						df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal[i],ax=ax)
+						handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+					else:
+						df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal2[i],ax=ax)
+			ncol = 1 + len(handles)//35
+			fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',borderaxespad=0.,fontsize=6,ncol=ncol)
+			fig.subplots_adjust(left=0.07,right=(1.01-0.11*ncol))
 		if filepath is None:
 			plt.show()
-			plt.close('fig')
 		else:
 			plt.savefig(filepath)
-			plt.close('fig')
-
+		plt.close(fig)
 
 
 
@@ -460,4 +542,5 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 			x.append(X[order,:])
 			y.append(Y[order])
 		return x,y
+
 
