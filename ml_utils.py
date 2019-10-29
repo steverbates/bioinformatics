@@ -82,16 +82,22 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 
 
 
-def heatmap(data_frame,filepath=None,categ_col=None,title=None,cmap=sns.diverging_palette(255,133,l=60, n=7,center='dark'),center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hiearchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
+def heatmap(data_frame,filepath=None,categ_col=None,title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
+	if center is None:
+		cmap = 'mako'
+	else:
+		cmap = sns.diverging_palette(133,240,l=70,sep=1,n=256,center='dark')
 	if categ_col is None:
 		if not dendrogram:
 			fig, ax = plt.subplots()
 			sns.heatmap(data_frame,cmap=cmap,center=center,ax=ax)
+			fig.subplots_adjust(left=0.175,right=0.97)
 		else:
 			g = sns.clustermap(data_frame,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
 			fig, ax = g.fig, g.ax_heatmap
+			fig.subplots_adjust(left=0.03,right=0.825)
 		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
-	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, sorting rows so that each category is contiguous
+	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting rows so that each category is contiguous
 		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
 		if -1 in categories:
 			categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
@@ -107,13 +113,13 @@ def heatmap(data_frame,filepath=None,categ_col=None,title=None,cmap=sns.divergin
 			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,yticklabels=False,ax=ax)
 			ax2.set_xlabel('')
 			ncol = 1 + len(handles)//35
-			fig.subplots_adjust(left=0.11*ncol,right=0.97)
+			fig.subplots_adjust(left=0.11*ncol,right=0.97) #resize heatmap within figure to make room for legend
 		else:
 			g = sns.clustermap(data_frame.drop(columns=categ_col),cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
 			fig, ax = g.fig, g.ax_heatmap
 			ax.set_yticks([])
 			ncol = 1 + len(handles)//62
-			fig.subplots_adjust(left=0.07*ncol,right=0.97)
+			fig.subplots_adjust(left=0.07*ncol,right=0.97)  #resize heatmap within figure to make room for legend
 		fig.legend(handles=handles,bbox_to_anchor=(0,0.5),loc='center left',borderaxespad=0.,fontsize=6,ncol=ncol)
 	ax.set_xlabel('')
 	ax.set_xticklabels(ax.get_xmajorticklabels(),fontsize=6)
@@ -171,7 +177,7 @@ class pca:
 				for i, category in enumerate(categories):
 					df = self.reduced[categ_col == category]
 					df.plot.scatter(x='PC0',y='PC1',s=4,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+					handles.append(Patch(color=pal[i],label=str(category)+' (%i)'%len(df.index)))
 			else:
 				pal2 = sns.hls_palette(len(categories),s=0.15,l=0.8)
 				pal2 = [pal2[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
@@ -179,7 +185,7 @@ class pca:
 					df = self.reduced[categ_col == category]
 					if category in highlights:
 						df.plot.scatter(x='PC0',y='PC1',s=4,color=pal[i],ax=ax)
-						handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+						handles.append(Patch(color=pal[i],label=str(category)+' (%i)'%len(df.index)))
 					else:
 						df.plot.scatter(x='PC0',y='PC1',s=4,color=pal2[i],ax=ax)
 			ncol = 1 + len(handles)//35
@@ -240,7 +246,7 @@ class tsne:
 				for i, category in enumerate(categories):
 					df = self.embedding[categ_col == category]
 					df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal[i],ax=ax)
-					handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+					handles.append(Patch(color=pal[i],label=str(category)+' (%i)'%len(df.index)))
 			else:
 				pal2 = sns.hls_palette(len(categories),s=0.15,l=0.8)
 				pal2 = [pal2[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #palette reordering not strictly necessary, but added for consistency with catmap ordering in heatmap plot method
@@ -249,7 +255,7 @@ class tsne:
 					df = self.embedding[categ_col == category]
 					if category in highlights:
 						df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal[i],ax=ax)
-						handles.append(Patch(color=pal[i],label=str(int(category))+' (%i)'%len(df.index)))
+						handles.append(Patch(color=pal[i],label=str(category)+' (%i)'%len(df.index)))
 					else:
 						df.plot.scatter(x='tSNE 1',y='tSNE 2',s=4,color=pal2[i],ax=ax)
 			ncol = 1 + len(handles)//35
@@ -542,5 +548,4 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 			x.append(X[order,:])
 			y.append(Y[order])
 		return x,y
-
 
