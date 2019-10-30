@@ -82,20 +82,21 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 
 
 
-def heatmap(data_frame,filepath=None,categ_col=None,title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
+def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
 	if center is None:
 		cmap = 'mako'
 	else:
 		cmap = sns.diverging_palette(133,240,l=70,sep=1,n=256,center='dark')
 	if categ_col is None:
 		if not dendrogram:
-			fig, ax = plt.subplots()
-			sns.heatmap(data_frame,cmap=cmap,center=center,ax=ax)
+			fig, ax = plt.subplots(figsize=figsize)
+			sns.heatmap(data_frame,cmap=cmap,center=center,cbar_kws={'orientation':'horizontal'},ax=ax)
 			fig.subplots_adjust(left=0.175,right=0.97)
 		else:
-			g = sns.clustermap(data_frame,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
+			g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
 			fig, ax = g.fig, g.ax_heatmap
 			fig.subplots_adjust(left=0.03,right=0.825)
+			g.cax.set_visible(False)
 		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
 	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting rows so that each category is contiguous
 		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
@@ -108,16 +109,17 @@ def heatmap(data_frame,filepath=None,categ_col=None,title=None,center=None,dendr
 			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
 		if not dendrogram:
-			fig, (ax2,ax) = plt.subplots(1,2,gridspec_kw={'width_ratios':[1,23],'wspace':0.01})
+			fig, (ax2,ax) = plt.subplots(1,2,figsize=figsize,gridspec_kw={'width_ratios':[1,23],'wspace':0.01})
+			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,cbar_kws={'orientation':'horizontal'},yticklabels=False,ax=ax)
 			sns.heatmap(data_frame[[categ_col]].sort_values(categ_col),cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
-			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,yticklabels=False,ax=ax)
 			ax2.set_xlabel('')
 			ncol = 1 + len(handles)//35
 			fig.subplots_adjust(left=0.11*ncol,right=0.97) #resize heatmap within figure to make room for legend
 		else:
-			g = sns.clustermap(data_frame.drop(columns=categ_col),cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
+			g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
 			fig, ax = g.fig, g.ax_heatmap
 			ax.set_yticks([])
+			g.cax.set_visible(False)
 			ncol = 1 + len(handles)//62
 			fig.subplots_adjust(left=0.07*ncol,right=0.97)  #resize heatmap within figure to make room for legend
 		fig.legend(handles=handles,bbox_to_anchor=(0,0.5),loc='center left',borderaxespad=0.,fontsize=6,ncol=ncol)
@@ -548,4 +550,50 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 			x.append(X[order,:])
 			y.append(Y[order])
 		return x,y
+
+#Untested after this point:
+'''
+
+#from sklearn.cluster import AgglomerativeClustering, DBSCAN, KMeans
+class hier_agg_cluster:
+	def __init__(self,data_frame,n_clusters=2,affinity='euclidean',memory=None,connectivity=None,compute_full_tree='auto',linkage='ward',distance_threshold=None,rescale=True):
+		self.data = data_frame
+		if rescale:
+			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+		else:
+			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+		model = AgglomerativeClustering(n_clusters=n_clusters,affinity=affinity,memory=memory,connectivity=connectivity,compute_full_tree=compute_full_tree,linkage=linkage,pooling_func=pooling_func,distance_threshold=distance_threshold)
+		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
+		self.n_clusters, self.n_leaves, self.n_connected_components, self.children = model.n_clusters_, model.n_leaves_, model.n_connected_components_, model.children_
+
+
+
+class DBSCAN_cluster:
+	def __init__(self,data_frame,eps=0.5,min_samples=5,metric='euclidean',metric_params=None,algorithm='auto',leaf_size=30,p=None,n_jobs=None,rescale=True):
+		self.data = data_frame
+		if rescale:
+			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+		else:
+			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+		model = DBSCANneps=neps,min_samples=min_samples,metric=metric,metric_params=metric_params,algorithm=algorithm,leaf_size=leaf_size,p=p,n_jobs=n_jobs)
+		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
+#		def tsne_embed(self,perplexity=30.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=0):
+#			self.tsne_embedding = 1
+
+
+'''
+
+
+'''
+
+class shared_nn_cluster:
+	def __init__(self,data_frame):
+		self.data = data_frame
+	if rescale:
+		self.scale_factors = self.data.apply(scale_calc,axis=0)
+	else:
+		self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+'''	
+
+#import sklearn.impute
 
