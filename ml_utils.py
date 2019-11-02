@@ -82,6 +82,7 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 
 
 
+
 def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
 	if center is None:
 		cmap = 'mako'
@@ -90,13 +91,17 @@ def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None
 	if categ_col is None:
 		if not dendrogram:
 			fig, ax = plt.subplots(figsize=figsize)
-			sns.heatmap(data_frame,cmap=cmap,center=center,cbar_kws={'orientation':'horizontal'},ax=ax)
-			fig.subplots_adjust(left=0.175,right=0.97)
+			sns.heatmap(data_frame,cmap=cmap,center=center,cbar=False,ax=ax)
+			cb_ax_loc = [0.02,0.06,0.86,0.04] #in figure coordinates, left margin
+			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
+			subplots_loc = {'left':0.185,'right':0.98,'top':0.92,'bottom':0.25} #subplot limits in figure coordinates
 		else:
 			g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
 			fig, ax = g.fig, g.ax_heatmap
-			fig.subplots_adjust(left=0.03,right=0.825)
-			g.cax.set_visible(False)
+			cb_ax_loc = [0.02,0.01,0.86,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
+			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
+			subplots_loc = {'left':0.03,'right':0.825,'top':0.92,'bottom':0.22} #subplot limits in figure coordinates
+			g.cax.set_visible(False)  #default colorbar suppressed
 		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
 	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting rows so that each category is contiguous
 		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
@@ -110,20 +115,29 @@ def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None
 		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
 		if not dendrogram:
 			fig, (ax2,ax) = plt.subplots(1,2,figsize=figsize,gridspec_kw={'width_ratios':[1,23],'wspace':0.01})
-			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,cbar_kws={'orientation':'horizontal'},yticklabels=False,ax=ax)
+			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,yticklabels=False,cbar=False,ax=ax)
 			sns.heatmap(data_frame[[categ_col]].sort_values(categ_col),cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
 			ax2.set_xlabel('')
 			ncol = 1 + len(handles)//35
-			fig.subplots_adjust(left=0.11*ncol,right=0.97) #resize heatmap within figure to make room for legend
+			cb_ax_loc = [0.02,0.06,0.98-0.12*ncol,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
+			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
+			subplots_loc = {'left':0.03,'right':1-0.12*ncol,'top':0.92,'bottom':0.25} #subplot limits in figure coordinates
 		else:
 			g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
 			fig, ax = g.fig, g.ax_heatmap
 			ax.set_yticks([])
-			g.cax.set_visible(False)
-			ncol = 1 + len(handles)//62
-			fig.subplots_adjust(left=0.07*ncol,right=0.97)  #resize heatmap within figure to make room for legend
-		fig.legend(handles=handles,bbox_to_anchor=(0,0.5),loc='center left',borderaxespad=0.,fontsize=6,ncol=ncol)
+			ncol = 1 + len(handles)//35
+			cb_ax_loc = [0.02,0.01,0.98-0.12*ncol,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
+			subplots_loc = {'left':0.03,'right':1-0.12*ncol,'top':0.92,'bottom':0.22} #subplot limits in figure coordinates
+			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
+			g.cax.set_visible(False) #default colorbar suppressed
+		fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',borderaxespad=0.,fontsize=6,ncol=ncol)
+	cb_ax = fig.add_axes(cb_ax_loc) #create new axis solely for colorbar
+	c = fig.colorbar(mappable,cax=cb_ax,orientation='horizontal') #generate colorbar
+	c.ax.tick_params(labelsize=6)
+	fig.subplots_adjust(**subplots_loc) #resize heatmap within figure to make room for legend
 	ax.set_xlabel('')
+	ax.set_ylabel('')
 	ax.set_xticklabels(ax.get_xmajorticklabels(),fontsize=6)
 	if title is not None:
 		fig.suptitle(title)
