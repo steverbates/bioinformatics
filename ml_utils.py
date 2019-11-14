@@ -101,10 +101,10 @@ def heatmap(data_frame,categ_col=None,categ_row=None,savepath=None,figsize=(6.4,
 		if -1 in categories:
 			categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
 			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
-			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + ((len(categories)+1)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
 		else:
 			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
-			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+			catmap = [catmap[i//2 + ((len(categories)+1)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
 		if not row_cluster:
 			data_frame = data_frame.sort_values(categ_col)
@@ -118,10 +118,10 @@ def heatmap(data_frame,categ_col=None,categ_row=None,savepath=None,figsize=(6.4,
 		if -1 in categories:
 			categories.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
 			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
-			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + ((len(categories)+1)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
 		else:
 			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
-			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+			catmap = [catmap[i//2 + ((len(categories)+1)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
 		if not col_cluster:
 			data_frame = data_frame.sort_values(categ_row,axis=1)
@@ -139,17 +139,17 @@ def heatmap(data_frame,categ_col=None,categ_row=None,savepath=None,figsize=(6.4,
 		if -1 in categories_col:
 			categories_col.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
 			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
-			catmap_col, categories_col = [(0,0,0)]+[catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))], [-1]+categories_col
+			catmap_col, categories_col = [(0,0,0)]+[catmap_col[i//2 + ((len(categories_col)+1)//2)*(i%2)] for i in range(len(categories_col))], [-1]+categories_col
 		else:
 			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
-			catmap_col = [catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+			catmap_col = [catmap_col[i//2 + ((len(categories_col)+1)//2)*(i%2)] for i in range(len(categories_col))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		if -1 in categories_row:
 			categories_row.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
 			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
-			catmap_row, categories_row = [(0,0,0)]+[catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))], [-1]+categories_row
+			catmap_row, categories_row = [(0,0,0)]+[catmap_row[i//2 + ((len(categories_row)+1)//2)*(i%2)] for i in range(len(categories_row))], [-1]+categories_row
 		else:
 			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
-			catmap_row = [catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+			catmap_row = [catmap_row[i//2 + ((len(categories_row)+1)//2)*(i%2)] for i in range(len(categories_row))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		def no_float(x): #to fix display of integer character labels in legend handles, in case they were coerced to float
 			try:
 				return str(int(x))
