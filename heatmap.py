@@ -3,15 +3,13 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.patches import Patch
 
-
-
-def heatmap(data_frame,categ_col=None,categ_row=None,filepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; filepath used to save figure instead of plt.show() default; title parameter used to add title to figure; all other parameters passed to seaborn.clustermap
+def heatmap(data_frame,categ_col=None,categ_row=None,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure; all other parameters passed to seaborn.clustermap
 	#Set colormap for main heatmap, if necessary:
 	if cmap is None:
 		if center is None:
 			cmap = 'mako'
 		else:
-			cmap = sns.diverging_palette(133,240,l=70,sep=1,n=256,center='dark')
+			cmap = sns.diverging_palette(133,240,s=100,as_cmap=True)
 	#generate heatmap, including generating colormap for categories among rows and/or columns:
 	if categ_col is None and categ_row is None:
 		g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage)
@@ -183,8 +181,8 @@ def heatmap(data_frame,categ_col=None,categ_row=None,filepath=None,figsize=(6.4,
 	subplots_loc = {'left':subplots_left,'right':subplots_right,'bottom':subplots_bottom,'top':subplots_top}
 	fig.subplots_adjust(**subplots_loc)
 	#Finally, show or save figure:
-	if filepath is None:
+	if savepath is None:
 		plt.show(fig)
 	else:
-		fig.savefig(filepath) #must use this method; g.savefig won't preserve adjustmnents made to layout
+		fig.savefig(savepath) #must use this method; g.savefig won't preserve adjustmnents made to layout
 	plt.close(fig)

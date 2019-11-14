@@ -83,27 +83,209 @@ def roc_auc(model,x=None,filepath=None,sample_weight=None,drop_intermediate=True
 
 
 
-def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
+def heatmap(data_frame,categ_col=None,categ_row=None,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure; all other parameters passed to seaborn.clustermap
+	#Set colormap for main heatmap, if necessary:
+	if cmap is None:
+		if center is None:
+			cmap = 'mako'
+		else:
+			cmap = sns.diverging_palette(133,240,s=100,as_cmap=True)
+	#generate heatmap, including generating colormap for categories among rows and/or columns:
+	if categ_col is None and categ_row is None:
+		g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage)
+	elif categ_row is None: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in row_cluster=False case sorting rows so that each category is contiguous
+		if type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
+			data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
+			categ_col = 'categ_col'
+		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
+		if -1 in categories:
+			categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+		else:
+			catmap = sns.hls_palette(len(categories),s=1,l=0.35)
+			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
+		if not row_cluster:
+			data_frame = data_frame.sort_values(categ_col)
+		g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
+		ncol = 1 + len(handles)//35
+	elif categ_col is None: #represent categories as a row of alternating colors, independent of the main heatmap's colormap, col_cluster=False case sorting columns so that each category is contiguous
+		if type(categ_row) != str: #assumption is that categ_row is part of data_frame, so need to add it if it's been provided as a separate iterable
+			data_frame.loc['categ_row',:] = pd.Series(categ_row,index=data_frame.columns)
+			categ_row = 'categ_row'
+		categories, counts = sorted(data_frame.loc[categ_row].unique()), dict(data_frame.loc[categ_row].value_counts())
+		if -1 in categories:
+			categories.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+		else:
+			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
+			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
+		if not col_cluster:
+			data_frame = data_frame.sort_values(categ_row,axis=1)
+		g = sns.clustermap(data_frame.drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,col_colors=data_frame.loc[categ_row].rename('').map(dict(zip(categories,catmap)))) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
+		ncol = 1 + len(handles)//35
+	else: #if both a category row and category column
+		if type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
+			data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
+			categ_col = 'categ_col'
+		if type(categ_row) != str: #assumption is that categ_row is part of data_frame, so need to add it if it's been provided as a separate iterable
+			data_frame.loc['categ_row',data_frame.columns.difference([categ_col])] = pd.Series(categ_row,index=data_frame.columns.difference([categ_col]))
+			categ_row = 'categ_row'
+		categories_col, counts_col = sorted(data_frame.drop(index=categ_row)[categ_col].unique()), dict(data_frame.drop(index=categ_row)[categ_col].value_counts())
+		categories_row, counts_row = sorted(data_frame.drop(columns=categ_col).loc[categ_row].unique()), dict(data_frame.drop(columns=categ_col).loc[categ_row].value_counts())
+		if -1 in categories_col:
+			categories_col.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
+			catmap_col, categories_col = [(0,0,0)]+[catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))], [-1]+categories_col
+		else:
+			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
+			catmap_col = [catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		if -1 in categories_row:
+			categories_row.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
+			catmap_row, categories_row = [(0,0,0)]+[catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))], [-1]+categories_row
+		else:
+			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
+			catmap_row = [catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		def no_float(x): #to fix display of integer character labels in legend handles, in case they were coerced to float
+			try:
+				return str(int(x))
+			except ValueError:
+				return str(x)
+		handles_row = [Patch(color=catmap_row[i],label=no_float(category)+' (%i)'%counts_row[category]) for i,category in enumerate(categories_row)]
+		handles_col = [Patch(color=catmap_col[i],label=no_float(category)+' (%i)'%counts_col[category]) for i,category in enumerate(categories_col)]
+		if not col_cluster:
+			data_frame = data_frame.sort_values(categ_row,axis=1)
+		if not row_cluster:
+			data_frame = data_frame.sort_values(categ_col)
+		g = sns.clustermap(data_frame.drop(columns=categ_col).drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories_col,catmap_col))),col_colors=data_frame.loc[categ_row].rename('').map(dict(zip(categories_row,catmap_row)))) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
+		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
+
+	g.cax.remove() #get rid of default colorbar
+	fig, ax = g.fig, g.ax_heatmap
+	if title is not None:
+		title_text = fig.suptitle(title)
+#	ax.set_xticks(ax.get_xticks()[1:]) #remove xtick from colorbar column
+
+	if categ_col is not None and categ_row is not None:
+		legend_col = fig.legend(handles=handles_col,title='Vertical\nCategories',bbox_to_anchor=(0.99,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,title_fontsize=6,ncol=legend_col_ncol)
+		legend_col_width = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		legend_col_height = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).height
+		legend_row = fig.legend(handles=handles_row,title='Horizontal\nCategories',bbox_to_anchor=(0.98-legend_col_width,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,title_fontsize=6,ncol=legend_row_ncol)
+		legend_row_width = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		legend_row_height = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).height
+		cb_rightshift = legend_row_width+0.01+legend_col_width+0.03 #make room for legend by shortening colorbar
+		total_height = legend_col_height + legend_row_height + 0.01 #height of legends plus padding if they were to be vertically stacked
+		if total_height < 1: #stack legends if there's room
+			legend_col._loc_real  = 1 #upper right corner for loc
+			legend_row._loc_real = 4 #lower right corner for loc
+			legend_col.set_bbox_to_anchor((1,(1+total_height)/2),transform=fig.transFigure)
+			legend_row.set_bbox_to_anchor((1,(1-total_height)/2),transform=fig.transFigure)
+			cb_rightshift = max(legend_col_width,legend_row_width)+0.03 #make room for legend by shortening colorbar
+	elif categ_col is not None or categ_row is not None:
+		legend = fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,ncol=ncol)
+		legend_width = legend.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		cb_rightshift = legend_width + 0.03 #make room for legend by shortening colorbar
+	else:
+		cb_rightshift = 0.03
+	#Create colorbar and make other modificaitions to figure
+	cb_ax_loc = [0.02,0.06,0.98-cb_rightshift,0.04] #in figure coordinates, left margin, bottom margin, width, and height for new colorbar axis
+	cb_ax = fig.add_axes(cb_ax_loc) #create new axes solely for colorbar
+	mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar
+	c = fig.colorbar(mappable,cax=cb_ax,orientation='horizontal') #generate colorbar
+	c.ax.tick_params(labelsize=6)
+	ax.set_xlabel('')
+	ax.set_ylabel('')
+	if 	len(data_frame.columns) > 30:
+		ax.set_xticks([]) #suppress ticks and labels in case there are too many to be helpful
+	else:
+		ax.set_xticklabels(ax.get_xmajorticklabels(),fontsize=6)
+	if len(data_frame.index) > 20:
+		ax.set_yticks([]) #suppress ticks and labels in case there are too many to be helpful
+	else:
+		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
+	#Get default parameters for positioning of axes, associated text, and legends:
+	cb_ax_tightbbox = c.ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	ax_tightbbox = ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	row_dendrogram_tightbbox = g.ax_row_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	col_dendrogram_tightbbox = g.ax_col_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	cb_ax_extent = c.ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	ax_extent = ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	row_dendrogram_extent = g.ax_row_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	col_dendrogram_extent = g.ax_col_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	if categ_col is not None:
+		row_colors_tightbbox = g.ax_row_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		row_colors_extent = g.ax_row_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	if categ_row is not None:
+		col_colors_tightbbox = g.ax_col_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		col_colors_extent = g.ax_col_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	if categ_col is not None and categ_row is not None:
+		legend_col_tightbbox = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		legend_row_tightbbox = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		legend_col_extent = legend_col.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		legend_row_extent = legend_row.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	elif categ_col is not None or categ_row is not None:
+		legend_tightbbox = legend.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		legend_extent = legend.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	#Calculate parameters for repositioning subplots (heatmap, dendrograms, row/column colors):
+	subplots_right = fig.subplotpars.right + cb_ax_tightbbox.x1 - ax_tightbbox.x1 #align right edge of heatmap tightbbox to colorbar tightbbox
+	if row_cluster: #align left edge of row dendrogram to left edge of colorbar
+		subplots_left = fig.subplotpars.left - (row_dendrogram_extent.x0 - cb_ax_extent.x0)
+	elif categ_col is not None:
+		k = (fig.subplotpars.right-fig.subplotpars.left)/(ax_extent.x1-row_colors_extent.x0) #approximately constant
+		extra_bbox_right = ax_tightbbox.x1 - ax_extent.x1 #constant
+		subplots_left = subplots_right  - k * (cb_ax_tightbbox.x1 - extra_bbox_right - cb_ax_extent.x0)
+	else: #align left edge of heatmap to left edge of colorbar
+		k = (fig.subplotpars.right-fig.subplotpars.left)/(ax_extent.x1-ax_extent.x0) #constant
+		extra_bbox_right = ax_tightbbox.x1 - ax_extent.x1 #constant
+		subplots_left = subplots_right  - k * (cb_ax_tightbbox.x1 - extra_bbox_right - cb_ax_extent.x0)
+	subplots_bottom = fig.subplotpars.bottom + cb_ax_tightbbox.y1 + 0.03 - ax_tightbbox.y0 #align bottom edge of heatmap tightbbox 0.03 units about top edge of colorbar tightbbox
+	if title is not None:
+		top_edge = title_text.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).y0 - 0.03
+	else:
+		top_edge = 0.97
+	if col_cluster:	
+		subplots_top = fig.subplotpars.top + (top_edge - col_dendrogram_extent.y1) #set top edge of col dendrogram
+	elif categ_row is not None:
+		k = (fig.subplotpars.top-fig.subplotpars.bottom)/(col_colors_extent.y1-ax_extent.y0)
+		extra_bbox_bottom = ax_extent.y0 - ax_tightbbox.y0  #constant
+		subplots_top = subplots_bottom + k * (top_edge - extra_bbox_bottom - cb_ax_tightbbox.y1 - 0.03)
+	else:
+		k = (fig.subplotpars.top-fig.subplotpars.bottom)/(ax_extent.y1-ax_extent.y0)
+		extra_bbox_bottom = ax_extent.y0 - ax_tightbbox.y0  #constant
+		subplots_top = subplots_bottom + k * (top_edge - extra_bbox_bottom - cb_ax_tightbbox.y1 - 0.03)
+	#resize subplots within figure to make room for legend, colorbar, and text labels:
+	subplots_loc = {'left':subplots_left,'right':subplots_right,'bottom':subplots_bottom,'top':subplots_top}
+	fig.subplots_adjust(**subplots_loc)
+	#Finally, show or save figure:
+	if savepath is None:
+		plt.show(fig)
+	else:
+		fig.savefig(savepath) #must use this method; g.savefig won't preserve adjustmnents made to layout
+	plt.close(fig)
+
+
+
+
+'''
+def heatmap(data_frame,filepath=None,categ_col=None,categ_row=None,figsize=(6.4,4.8),title=None,center=None,dendrogram=False,method='average',metric='euclidean',z_score=None,row_linkage=None,col_linkage=None,row_colors=None): #if dendrogram True, display a hierarchically clustered map with dendrograms.  All subsequent keywords only relevant in this case.
 	if center is None:
 		cmap = 'mako'
 	else:
 		cmap = sns.diverging_palette(133,240,l=70,sep=1,n=256,center='dark')
-	if categ_col is None:
+	if categ_col is None and categ_row is None:
 		if not dendrogram:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.heatmap(data_frame,cmap=cmap,center=center,cbar=False,ax=ax)
-			cb_ax_loc = [0.02,0.06,0.86,0.04] #in figure coordinates, left margin
-			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
-			subplots_loc = {'left':0.185,'right':0.98,'top':0.92,'bottom':0.25} #subplot limits in figure coordinates
 		else:
 			g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage)
 			fig, ax = g.fig, g.ax_heatmap
-			cb_ax_loc = [0.02,0.01,0.86,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
-			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
-			subplots_loc = {'left':0.03,'right':0.825,'top':0.92,'bottom':0.22} #subplot limits in figure coordinates
 			g.cax.set_visible(False)  #default colorbar suppressed
 		ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
-	else: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting rows so that each category is contiguous
+	elif categ_row is None: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting rows so that each category is contiguous
 		categories, counts = sorted(data_frame[categ_col].unique()), dict(data_frame[categ_col].value_counts())
 		if -1 in categories:
 			categories.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
@@ -116,31 +298,155 @@ def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None
 		if not dendrogram:
 			fig, (ax2,ax) = plt.subplots(1,2,figsize=figsize,gridspec_kw={'width_ratios':[1,23],'wspace':0.01})
 			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col),cmap=cmap,center=center,yticklabels=False,cbar=False,ax=ax)
-			sns.heatmap(data_frame[[categ_col]].sort_values(categ_col),cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
+			if data_frame[categ_col].dtype == 'object': #if non-numerical category names, need to make numerical to construct category colors as a heatmap
+				cat_nums = data_frame[[categ_col]].sort_values(categ_col).replace(dict(zip(categories,range(len(categories)))))
+			else:
+				cat_nums = data_frame[[categ_col]].sort_values(categ_col)
+			sns.heatmap(cat_nums,cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
 			ax2.set_xlabel('')
+			ax2.set_ylabel('')
 			ncol = 1 + len(handles)//35
-			cb_ax_loc = [0.02,0.06,0.98-0.12*ncol,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
-			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
-			subplots_loc = {'left':0.03,'right':1-0.12*ncol,'top':0.92,'bottom':0.25} #subplot limits in figure coordinates
 		else:
 			g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories,catmap))))
 			fig, ax = g.fig, g.ax_heatmap
 			ax.set_yticks([])
+			ax.set_xticks(ax.get_xticks()[1:]) #remove xtick from colorbar column
 			ncol = 1 + len(handles)//35
-			cb_ax_loc = [0.02,0.01,0.98-0.12*ncol,0.04] #left margin, bottom margin, width, and height for new colorbar axis below, all in figure coordinates
-			subplots_loc = {'left':0.03,'right':1-0.12*ncol,'top':0.92,'bottom':0.22} #subplot limits in figure coordinates
-			mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar below
 			g.cax.set_visible(False) #default colorbar suppressed
-		fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',borderaxespad=0.,fontsize=6,ncol=ncol)
-	cb_ax = fig.add_axes(cb_ax_loc) #create new axis solely for colorbar
+	elif categ_col is None: #represent categories as a row of alternating colors, independent of the main heatmap's colormap, in non-dendrogram case sorting columns so that each category is contiguous
+		categories, counts = sorted(data_frame.loc[categ_row].unique()), dict(data_frame.loc[categ_row].value_counts())
+		if -1 in categories:
+			categories.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
+			catmap, categories = [(0,0,0)]+[catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))], [-1]+categories
+		else:
+			catmap = sns.hls_palette(len(categories),h=0.66,s=1,l=0.35)
+			catmap = [catmap[i//2 + (len(categories)//2)*(i%2)] for i in range(len(categories))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		handles = [Patch(color=catmap[i],label=str(category)+' (%i)'%counts[category]) for i,category in enumerate(categories)]
+		if not dendrogram:
+			fig, (ax2,ax) = plt.subplots(2,1,figsize=figsize,gridspec_kw={'height_ratios':[1,23],'hspace':0.01})
+			sns.heatmap(data_frame.sort_values(categ_row,axis=1).drop(index=categ_row).astype('float64'),cmap=cmap,center=center,xticklabels=False,cbar=False,ax=ax) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
+			if data_frame.loc[categ_row].dtype == 'object': #if non-numerical category names, need to make numerical to construct category colors as a heatmap
+				cat_nums = data_frame.loc[[categ_row],:].sort_values(categ_row,axis=1).replace(dict(zip(categories,range(len(categories)))))
+			else:
+				cat_nums = data_frame.loc[[categ_row],:].sort_values(categ_row,axis=1)
+			sns.heatmap(cat_nums,cmap=catmap,xticklabels=False,yticklabels=False,cbar=False,ax=ax2) 
+			ax2.set_xlabel('')
+			ax2.set_ylabel('')
+			ncol = 1 + len(handles)//35
+			ax.set_yticklabels(ax.get_ymajorticklabels(),fontsize=6)
+		else:
+			g = sns.clustermap(data_frame.drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,col_colors=data_frame.loc[categ_row].rename('').map(dict(zip(categories,catmap)))) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
+			fig, ax = g.fig, g.ax_heatmap
+			ax.set_yticks([])
+			ncol = 1 + len(handles)//35
+			g.cax.set_visible(False) #default colorbar suppressed
+	else: #if both a category row and category column
+		categories_col, counts_col = sorted(data_frame.drop(index=categ_row)[categ_col].unique()), dict(data_frame.drop(index=categ_row)[categ_col].value_counts())
+		categories_row, counts_row = sorted(data_frame.drop(columns=categ_col).loc[categ_row].unique()), dict(data_frame.drop(columns=categ_col).loc[categ_row].value_counts())
+		if -1 in categories_col:
+			categories_col.remove(-1) #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
+			catmap_col, categories_col = [(0,0,0)]+[catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))], [-1]+categories_col
+		else:
+			catmap_col = sns.hls_palette(len(categories_col),s=1,l=0.35)
+			catmap_col = [catmap_col[i//2 + (len(categories_col)//2)*(i%2)] for i in range(len(categories_col))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		if -1 in categories_row:
+			categories_row.remove(-1) #uncategorized columns, if they exist, to be assigned black, and removed from consideration before generating the category palette
+			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
+			catmap_row, categories_row = [(0,0,0)]+[catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))], [-1]+categories_row
+		else:
+			catmap_row = sns.hls_palette(len(categories_row),h=0.66,s=1,l=0.35)
+			catmap_row = [catmap_row[i//2 + (len(categories_row)//2)*(i%2)] for i in range(len(categories_row))] #the palette for category labeling was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+		def no_float(x): #to fix display of integer character labels in legend handles, in case they were coerced to float
+			try:
+				return str(int(x))
+			except ValueError:
+				return str(x)
+		handles_row = [Patch(color=catmap_row[i],label=no_float(category)+' (%i)'%counts_row[category]) for i,category in enumerate(categories_row)]
+		handles_col = [Patch(color=catmap_col[i],label=no_float(category)+' (%i)'%counts_col[category]) for i,category in enumerate(categories_col)]
+		if not dendrogram:
+			fig, ((ax0,ax3),(ax2,ax)) = plt.subplots(2,2,figsize=figsize,gridspec_kw={'width_ratios':[1,23],'wspace':0.01,'height_ratios':[1,23],'hspace':0.01},)
+			ax0.set_axis_off()
+			sns.heatmap(data_frame.sort_values(categ_col).drop(columns=categ_col).sort_values(categ_row,axis=1).drop(index=categ_row).astype('float64'),cmap=cmap,center=center,yticklabels=False,cbar=False,ax=ax)
+			if data_frame.loc[categ_row].dtype == 'object': #if non-numerical category names, need to make numerical to construct category colors as a heatmap
+				cat_nums_row = data_frame.drop(columns=categ_col).loc[[categ_row],:].sort_values(categ_row,axis=1).replace(dict(zip(categories_row,range(len(categories_row)))))
+			else:
+				cat_nums_row = data_frame.drop(columns=categ_col).loc[[categ_row],:].sort_values(categ_row,axis=1)
+			sns.heatmap(cat_nums_row,cmap=catmap_row,xticklabels=False,yticklabels=False,cbar=False,ax=ax3) 
+			ax3.set_xlabel('')
+			ax3.set_ylabel('')
+			if data_frame[categ_col].dtype == 'object': #if non-numerical category names, need to make numerical to construct category colors as a heatmap
+				cat_nums_col = data_frame.drop(index=categ_row)[[categ_col]].sort_values(categ_col).replace(dict(zip(categories_col,range(len(categories_col)))))
+			else:
+				cat_nums_col = data_frame.drop(index=categ_row)[[categ_col]].sort_values(categ_col)
+			sns.heatmap(cat_nums_col,cmap=catmap_col,xticklabels=False,yticklabels=False,cbar=False,ax=ax2)
+			ax2.set_xlabel('')
+			ax2.set_ylabel('')
+			legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
+		else:
+			g = sns.clustermap(data_frame.drop(columns=categ_col).drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,method=method,metric=metric,z_score=z_score,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(dict(zip(categories_col,catmap_col))),col_colors=data_frame.loc[categ_row].rename('').map(dict(zip(categories_row,catmap_row)))) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
+			fig, ax = g.fig, g.ax_heatmap
+			ax.set_yticks([])
+			legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
+			g.cax.set_visible(False) #default colorbar suppressed
+	if categ_col is not None and categ_row is not None:
+		legend_col = fig.legend(handles=handles_col,title='Vertical\nCategories',bbox_to_anchor=(0.99,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,title_fontsize=6,ncol=legend_col_ncol)
+		legend_col_width = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		legend_col_height = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).height
+		legend_row = fig.legend(handles=handles_row,title='Horizontal\nCategories',bbox_to_anchor=(0.98-legend_col_width,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,title_fontsize=6,ncol=legend_row_ncol)
+		legend_row_width = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		legend_row_height = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).height
+		subplots_rightshift = 0.01+legend_row_width+legend_col_width
+		total_height = legend_col_height + legend_row_height + 0.01 #height of legends plus padding if they were to be vertically stacked
+		if total_height < 1: #stack legends if there's room
+			legend_col._loc_real  = 1 #upper right corner for loc
+			legend_row._loc_real = 4 #lower right corner for loc
+			legend_col.set_bbox_to_anchor((1,(1+total_height)/2),transform=fig.transFigure)
+			legend_row.set_bbox_to_anchor((1,(1-total_height)/2),transform=fig.transFigure)
+			subplots_rightshift = max(legend_col_width,legend_row_width)
+	elif categ_col is not None or categ_row is not None:
+		legend = fig.legend(handles=handles,bbox_to_anchor=(0.99,0.5),loc='center right',bbox_transform=fig.transFigure,borderaxespad=0.,fontsize=6,ncol=ncol)
+		legend_width = legend.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).width
+		subplots_rightshift = legend_width
+	else:
+		subplots_rightshift = 0
+	cb_ax_loc = [0.02,0.06,0.96-subplots_rightshift,0.04] #in figure coordinates, left margin, bottom margin, width, and height for new colorbar axis
+	cb_ax = fig.add_axes(cb_ax_loc) #create new axes solely for colorbar
+	mappable = ax.collections[0] #extract information on mapping of data points to colors for generating new colorbar
 	c = fig.colorbar(mappable,cax=cb_ax,orientation='horizontal') #generate colorbar
 	c.ax.tick_params(labelsize=6)
-	fig.subplots_adjust(**subplots_loc) #resize heatmap within figure to make room for legend
 	ax.set_xlabel('')
 	ax.set_ylabel('')
 	ax.set_xticklabels(ax.get_xmajorticklabels(),fontsize=6)
+	ax_tightbbox = ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	cb_ax_tightbbox = c.ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	if dendrogram:
+		subplots_leftshift = -0.105
+	elif categ_col is None:
+		subplots_leftshift = cb_ax_tightbbox.x0 - ax_tightbbox.x0
+	else:
+		ax2_tightbbox = ax2.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+		subplots_leftshift = cb_ax_tightbbox.x0 - ax2_tightbbox.x0
+	subplots_bottomshift = cb_ax_tightbbox.y1 + 0.02 - ax_tightbbox.y0
+	subplots_topshift = 0
+	subplots_loc = {'left':0.125+subplots_leftshift,'right':0.98-subplots_rightshift,'bottom':0.11+subplots_bottomshift,'top':0.88-subplots_topshift}
+	fig.subplots_adjust(**subplots_loc) #resize heatmap within figure to make room for legend, colorbar, and text labels
 	if title is not None:
 		fig.suptitle(title)
+
+	print('\n',filepath)
+#	if dendrogram:
+#		print(dir(g.ax_col_dendrogram),dir(g.ax_row_dendrogram))
+	print('cb_ax_loc:',cb_ax_loc)
+	print('left: ',cb_ax_loc[0],', right: ',cb_ax_loc[0]+cb_ax_loc[2],', bottom: ',cb_ax_loc[1],', top: ',cb_ax_loc[1]+cb_ax_loc[3])
+	tightbox = c.ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	print('x0: ',tightbox.x0,', x1:  ',tightbox.x1,', y0: ',tightbox.y0,', y1: ',tightbox.y1,'\n')
+	print('subplots_loc:',subplots_loc)
+	print('left: ',fig.subplotpars.left,', right: ',fig.subplotpars.right,', bottom: ',fig.subplotpars.bottom,', top: ',fig.subplotpars.top)
+	tightbox = ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
+	print('x0: ',tightbox.x0,', x1:  ',tightbox.x1,', y0: ',tightbox.y0,', y1: ',tightbox.y1,'\n')
+		
 	if filepath is None:
 		plt.show(fig)
 	elif dendrogram:
@@ -148,6 +454,8 @@ def heatmap(data_frame,filepath=None,categ_col=None,figsize=(6.4,4.8),title=None
 	else:
 		fig.savefig(filepath)
 	plt.close(fig)
+'''
+
 
 
 
