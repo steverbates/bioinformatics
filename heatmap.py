@@ -171,11 +171,11 @@ def heatmap(data_frame,categ_col=None,categ_row=None,categ_col_uncat=-1,categ_ro
 		k = (fig.subplotpars.right-fig.subplotpars.left)/(ax_extent.x1-row_colors_extent.x0) #approximately constant
 		extra_bbox_right = ax_tightbbox.x1 - ax_extent.x1 #constant
 		subplots_left = subplots_right  - k * (cb_ax_tightbbox.x1 - extra_bbox_right - cb_ax_extent.x0)
-	else: #align left edge of heatmap to left edge of colorbar
+	else:
 		k = (fig.subplotpars.right-fig.subplotpars.left)/(ax_extent.x1-ax_extent.x0) #constant
 		extra_bbox_right = ax_tightbbox.x1 - ax_extent.x1 #constant
 		subplots_left = subplots_right  - k * (cb_ax_tightbbox.x1 - extra_bbox_right - cb_ax_extent.x0)
-	subplots_bottom = fig.subplotpars.bottom + cb_ax_tightbbox.y1 + 0.03 - ax_tightbbox.y0 #align bottom edge of heatmap tightbbox 0.03 units about top edge of colorbar tightbbox
+	subplots_bottom = fig.subplotpars.bottom + cb_ax_tightbbox.y1 + 0.03 - ax_tightbbox.y0 #align bottom edge of heatmap tightbbox 0.03 units above top edge of colorbar tightbbox
 	if title is not None:
 		top_edge = title_text.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure).y0 - 0.03
 	else:
