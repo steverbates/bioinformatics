@@ -3,17 +3,17 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.patches import Patch
 
-def categorical_palette(categories,uncat='-1',h=0,s=1,l=0.35): #auxiliary function to build dictionary of color codes assigned to categories on, e.g., a heatmap.  For n_categories<=12, pick from in-built categorical color palette.  For larger numbers, generate series of hues evenly spaced radially in HSL color space--h,l,s parameters only relevant in this case, to pass to sns.hls_palette.  The uncat parameter is used to identify label indicating uncategorized data points; this category will be assigned black (and the remaining number of categories will be used to determine cutoff between using in-built vs generated palette.)
+def categorical_palette(categories,uncat='-1',h=0,s=1,l=0.33): #auxiliary function to build dictionary of color codes assigned to categories on, e.g., a heatmap.  For n_categories<=12, pick from in-built categorical color palette.  For larger numbers, generate series of hues evenly spaced radially in HSL color space--h,l,s parameters only relevant in this case, to pass to sns.hls_palette.  The uncat parameter is used to identify label indicating uncategorized data points; this category will be assigned a grayscale value (and the remaining number of categories will be used to determine cutoff between using in-built vs generated palette.)
 	paired_palette = sns.color_palette('Paired') #inbuilt matplotlib catergorical palette
 	paired_palette = [paired_palette[i] for i in [3,1,9,11,10,4,0,7,5,8,2,6]] #re-order colors to taste
 	if uncat in categories:
 		categories = [c for c in categories if c != uncat] #uncategorized samples, if they exist, to be assigned black, and removed from consideration before generating the category palette
-		length = len(categories)
+		length, m = len(categories), max((3*l-1)/2,0)
 		if length > 12:
 			cmap = sns.hls_palette(length,h=h,s=s,l=l)
-			categories, cmap = [uncat]+categories,  [(0,0,0)]+[cmap[i//2 + ((length+1)//2)*(i%2)] for i in range(length)] #the palette was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle in e.g. a sorted heatmap, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
+			categories, cmap = [uncat]+categories,  [(m,m,m)]+[cmap[i//2 + ((length+1)//2)*(i%2)] for i in range(length)] #the palette was originally generated as a series of colors evenly spaced through the spectrum.  To maintain sharp boundaries even with many categories, when the transitions might otherwise become too subtle in e.g. a sorted heatmap, this step rearranges the colors' order by alternately picking from the front and back halves of the spectrum, maximizing the contrast of adjacent colors
 		else:
-			categories, cmap = [uncat]+categories, [(0,0,0)]+sns.color_palette(paired_palette[:length])
+			categories, cmap = [uncat]+categories, [(m,m,m)]+sns.color_palette(paired_palette[:length])
 	else:
 		length = len(categories)
 		if length > 12:
@@ -33,7 +33,7 @@ def no_float(x): #for use in generating category legends; need to both have nume
 
 
 
-def label_sort(x): #used in conjunction with no_float, as key to sort numeric labels properly for legend display by adding leading zeros
+def label_sort(x): #default key to sort numeric labels properly for legend display by adding leading zeros to numbers
 	try:
 		return '{:0>3d}'.format(int(x))
 	except ValueError:
@@ -41,63 +41,112 @@ def label_sort(x): #used in conjunction with no_float, as key to sort numeric la
 
 
 
-def heatmap(data_frame,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure; all other parameters passed to seaborn.clustermap
+def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',row_sort=True,col_sort=True,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure. row_sort and col_sort used to determine orderings for display and only apply as long as row_cluster/col_cluster are False; default is to sort according to category label ascending, numerical labels followed by string, but setting row_sort/col_sort to False or inputing no category column/row will leave order unchanged and inputting a dictionary, string function, or iterable will impose an ordering. All other parameters passed to seaborn.clustermap
 	#Set colormap for main heatmap, if necessary:
+	data_frame = df.copy()
 	if cmap is None:
 		if center is None:
 			cmap = 'mako'
 		else:
 			cmap = sns.diverging_palette(133,240,s=100,as_cmap=True)
-	#generate heatmap, including generating colormap for categories among rows and/or columns:
-	if categ_col is None and categ_row is None:
-		g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage)
-	elif categ_row is None: #represent categories as a column of alternating colors, independent of the main heatmap's colormap, in row_cluster=False case sorting rows so that each category is contiguous
+	#Calculate row sorting order
+	if categ_col is not None:
 		if type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
 			data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
 			categ_col = 'categ_col'
 		data_frame[categ_col] = data_frame[categ_col].apply(no_float)
-		counts = dict(data_frame[categ_col].value_counts())
-		categories = sorted(counts.keys(),key=label_sort)
-		catmap = categorical_palette(categories,categ_col_uncat)
-		handles = [Patch(color=catmap[category],label=category+' (%i)'%counts[category]) for category in categories]
-		if not row_cluster:
-			data_frame = data_frame.loc[sorted(data_frame.index,key=lambda x: label_sort(data_frame.loc[x,categ_col])),:]
-		g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap))
-		ncol = 1 + len(handles)//35
-	elif categ_col is None: #represent categories as a row of alternating colors, independent of the main heatmap's colormap, col_cluster=False case sorting columns so that each category is contiguous
+		if type(row_sort)==bool:
+			row_sorted = sorted(data_frame.index,key=lambda x: label_sort(data_frame.loc[x,categ_col]))
+		elif callable(row_sort):
+			row_sorted = sorted(data_frame.index,key=lambda x: row_sort(data_frame.loc[x,categ_col]))
+		else:
+			if type(row_sort)!=dict:
+				row_sort = dict(zip([no_float(x) for x in row_sort],range(len(row_sort))))
+			else:
+				row_sort = dict(zip([no_float(x) for x in row_sort.keys()],row_sort.values()))
+			row_sorted = sorted(data_frame.index,key=lambda x: row_sort[data_frame.loc[x,categ_col]])
+	#Calculate col sorting order
+	if categ_row is not None:
 		if type(categ_row) != str: #assumption is that categ_row is part of data_frame, so need to add it if it's been provided as a separate iterable
 			data_frame.loc['categ_row',:] = pd.Series(categ_row,index=data_frame.columns)
 			categ_row = 'categ_row'
 		data_frame.loc[categ_row] = data_frame.loc[categ_row].apply(no_float)
+		if type(col_sort)==bool:
+			col_sorted = sorted(data_frame,key=lambda x: label_sort(data_frame.loc[categ_row,x]))
+		elif callable(col_sort):
+			col_sorted = sorted(data_frame,key=lambda x: col_sort(data_frame.loc[categ_row,x]))
+		else:
+			if type(col_sort)!=dict:
+				col_sort = dict(zip([no_float(x) for x in col_sort],range(len(col_sort))))
+			else:
+				col_sort = dict(zip([no_float(x) for x in col_sort.keys()],col_sort.values()))				
+			col_sorted = sorted(data_frame,key=lambda x: col_sort[data_frame.loc[categ_row,x]])
+	#generate heatmap, including generating colormap for categories among rows and/or columns:
+	if categ_col is None and categ_row is None:
+		g = sns.clustermap(data_frame,figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage)
+	elif categ_row is None: #represent categories as a column of coded colors, independent of the main heatmap's colormap
+		counts = dict(data_frame[categ_col].value_counts())
+		if row_sort==False:
+			categories = counts.keys()
+		elif row_sort==True:
+			categories = sorted(counts.keys(),key=label_sort)
+		elif callable(row_sort):
+			categories = sorted(counts.keys(),key=row_sort)
+		else:
+			categories = sorted(counts.keys(),key=lambda x: row_sort[x])
+		catmap = categorical_palette(categories,categ_col_uncat)
+		handles = [Patch(color=catmap[category],label=category+' (%i)'%counts[category]) for category in categories]
+		if not row_cluster and row_sort!=False:
+			data_frame = data_frame.loc[row_sorted,:]
+		g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap))
+		ncol = 1 + len(handles)//35
+	elif categ_col is None: #represent categories as a row of coded colors, independent of the main heatmap's colormap
 		counts = dict(data_frame.loc[categ_row].value_counts())
-		categories = sorted(counts.keys(),key=label_sort)
+		if col_sort==False:
+			categories = counts.keys()
+		elif col_sort==True:
+			categories = sorted(counts.keys(),key=label_sort)
+		elif callable(col_sort):
+			categories = sorted(counts.keys(),key=col_sort)
+		else:
+			categories = sorted(counts.keys(),key=lambda x: col_sort[x])
 		catmap = categorical_palette(categories,categ_row_uncat)
 		handles = [Patch(color=catmap[category],label=category+' (%i)'%counts[category]) for category in categories]
-		if not col_cluster:
-			data_frame = data_frame[sorted(data_frame,key=lambda x: label_sort(data_frame.loc[categ_row,x]))]
+		if not col_cluster and col_sort!=False:
+			data_frame = data_frame[col_sorted]
 		g = sns.clustermap(data_frame.drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,col_colors=data_frame.loc[categ_row].rename('').map(catmap)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
 		ncol = 1 + len(handles)//35
 	else: #if both a category row and category column
-		if type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
-			data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
-			categ_col = 'categ_col'
-		if type(categ_row) != str: #assumption is that categ_row is part of data_frame, so need to add it if it's been provided as a separate iterable
-			data_frame.loc['categ_row',data_frame.columns.difference([categ_col])] = pd.Series(categ_row,index=data_frame.columns.difference([categ_col]))
-			categ_row = 'categ_row'
-		data_frame.loc[categ_row] = data_frame.loc[categ_row].apply(no_float)
-		data_frame[categ_col] = data_frame[categ_col].apply(no_float)
 		counts_col = dict(data_frame.drop(index=categ_row)[categ_col].value_counts())
-		categories_col = sorted(counts_col.keys(),key=label_sort)
+		if row_sort==False:
+			categories_col = counts_col.keys()
+		elif row_sort==True:
+			categories_col = sorted(counts_col.keys(),key=label_sort)
+		elif callable(row_sort):
+			categories_col = sorted(counts_col.keys(),key=row_sort)
+		else:
+			categories_col = sorted(counts_col.keys(),key=lambda x: row_sort[x])
 		counts_row = dict(data_frame.drop(columns=categ_col).loc[categ_row].value_counts())
-		categories_row = sorted(counts_row.keys(),key=label_sort)
+		if col_sort==False:
+			categories_row = counts_row.keys()
+		elif col_sort==True:
+			categories_row = sorted(counts_row.keys(),key=label_sort)
+		elif callable(col_sort):
+			categories_row = sorted(counts_row.keys(),key=col_sort)
+		else:
+			categories_row = sorted(counts_row.keys(),key=lambda x: col_sort[x])
 		catmap_col = categorical_palette(categories_col,categ_col_uncat)
 		catmap_row = categorical_palette(categories_row,categ_row_uncat)
 		handles_row = [Patch(color=catmap_row[category],label=category+' (%i)'%counts_row[category]) for category in categories_row]
 		handles_col = [Patch(color=catmap_col[category],label=category+' (%i)'%counts_col[category]) for category in categories_col]
-		if not col_cluster:
-			data_frame = data_frame[sorted(data_frame,key=lambda x: label_sort(data_frame.loc[categ_row,x]))]
-		if not row_cluster:
-			data_frame = data_frame.loc[sorted(data_frame.index,key=lambda x: label_sort(data_frame.loc[x,categ_col])),:]
+		if not col_cluster and col_sort!=False:
+			if categ_col not in col_sorted:
+				col_sorted.append(categ_col)
+			data_frame = data_frame[col_sorted]
+		if not row_cluster and row_sort!=False:
+			if categ_row not in row_sorted:
+				row_sorted.append(categ_row)
+			data_frame = data_frame.loc[row_sorted,:]
 		g = sns.clustermap(data_frame.drop(columns=categ_col).drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap_col),col_colors=data_frame.loc[categ_row].rename('').map(catmap_row)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
 		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
 	g.cax.remove() #get rid of default colorbar
@@ -128,7 +177,7 @@ def heatmap(data_frame,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_
 			legend_col.set_bbox_to_anchor((1,(1+total_height)/2),transform=fig.transFigure)
 			legend_row.set_bbox_to_anchor((1,(1-total_height)/2),transform=fig.transFigure)
 			cb_rightshift = max(legend_col_width,legend_row_width)+0.03 #make room for legend by shortening colorbar
-	elif categ_col is not None or categ_row is not None: #title variable already used to set figure title so it can be recycled
+	elif categ_col is not None or categ_row is not None:
 		if categ_col is None:
 			if data_frame.columns.name is None:
 				legend_title = 'categories'
