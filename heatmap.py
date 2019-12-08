@@ -41,7 +41,7 @@ def label_sort(x): #default key to sort numeric labels properly for legend displ
 
 
 
-def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',row_sort=True,col_sort=True,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure. row_sort and col_sort used to determine orderings for display and only apply as long as row_cluster/col_cluster are False; default is to sort according to category label ascending, numerical labels followed by string, but setting row_sort/col_sort to False or inputing no category column/row will leave order unchanged and inputting a dictionary, string function, or iterable will impose an ordering. All other parameters passed to seaborn.clustermap
+def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',row_sort=True,col_sort=True,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None,return_reordered=False): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure. row_sort and col_sort used to determine orderings for display and only apply as long as row_cluster/col_cluster are False; default is to sort according to category label ascending, numerical labels followed by string, but setting row_sort/col_sort to False or inputing no category column/row will leave order unchanged and inputting a dictionary, string function, or iterable will impose an ordering. (Even if row_cluster/col_cluster True, row_sort/col_sort can be used to order categories in legend). All other parameters passed to seaborn.clustermap
 	#Set colormap for main heatmap, if necessary:
 	data_frame = df.copy()
 	if cmap is None:
@@ -99,7 +99,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 		if not row_cluster and row_sort!=False:
 			data_frame = data_frame.loc[row_sorted,:]
 		g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap))
-		ncol = 1 + len(handles)//35
+		ncol = 1 + len(handles)//33
 	elif categ_col is None: #represent categories as a row of coded colors, independent of the main heatmap's colormap
 		counts = dict(data_frame.loc[categ_row].value_counts())
 		if col_sort==False:
@@ -115,7 +115,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 		if not col_cluster and col_sort!=False:
 			data_frame = data_frame[col_sorted]
 		g = sns.clustermap(data_frame.drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,col_colors=data_frame.loc[categ_row].rename('').map(catmap)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
-		ncol = 1 + len(handles)//35
+		ncol = 1 + len(handles)//33
 	else: #if both a category row and category column
 		counts_col = dict(data_frame.drop(index=categ_row)[categ_col].value_counts())
 		if row_sort==False:
@@ -148,7 +148,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 				row_sorted.append(categ_row)
 			data_frame = data_frame.loc[row_sorted,:]
 		g = sns.clustermap(data_frame.drop(columns=categ_col).drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap_col),col_colors=data_frame.loc[categ_row].rename('').map(catmap_row)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
-		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
+		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//33, 1 + len(handles_row)//33
 	g.cax.remove() #get rid of default colorbar
 	fig, ax = g.fig, g.ax_heatmap
 	if title is not None:
@@ -268,3 +268,17 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 	else:
 		fig.savefig(savepath) #must use this method; g.savefig won't preserve adjustmnents made to layout
 	plt.close(fig)
+	if return_reordered:
+		if row_cluster:
+			row_ind = g.dendrogram_row.reordered_ind
+		else:
+			row_ind = list(range(len(data_frame.index)))
+			if categ_row is not None:
+				row_ind = row_ind[:len(row_ind)-1]
+		if col_cluster:
+			col_ind = g.dendrogram_col.reordered_ind
+		else:
+			col_ind = list(range(len(data_frame.columns)))
+			if categ_col is not None:
+				col_ind = col_ind[:len(col_ind)-1]
+		return data_frame.iloc[row_ind,col_ind]

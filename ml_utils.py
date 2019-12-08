@@ -121,7 +121,7 @@ def roc_auc(model,x=None,savepath=None,sample_weight=None,drop_intermediate=True
 
 
 
-def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',row_sort=True,col_sort=True,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure. row_sort and col_sort used to determine orderings for display and only apply as long as row_cluster/col_cluster are False; default is to sort according to category label ascending, numerical labels followed by string, but setting row_sort/col_sort to False or inputing no category column/row will leave order unchanged and inputting a dictionary, string function, or iterable will impose an ordering. All other parameters passed to seaborn.clustermap
+def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_uncat='-1',row_sort=True,col_sort=True,savepath=None,figsize=(6.4,4.8),title=None,cmap=None,center=None,vmin=None,vmax=None,method='average',metric='euclidean',z_score=None,row_cluster=False,col_cluster=False,row_linkage=None,col_linkage=None,return_reordered=False): #categ_col and categ_row parameters used to determine display of a column of colors for row categories or a row of colors for column categories respectively; categ_col_uncat and categ_row_uncat are the respective labels indicating unknown category; they will be assigned a black color label; savepath used to save figure instead of plt.show() default; title parameter used to add title to figure. row_sort and col_sort used to determine orderings for display and only apply as long as row_cluster/col_cluster are False; default is to sort according to category label ascending, numerical labels followed by string, but setting row_sort/col_sort to False or inputing no category column/row will leave order unchanged and inputting a dictionary, string function, or iterable will impose an ordering. (Even if row_cluster/col_cluster True, row_sort/col_sort can be used to order categories in legend). All other parameters passed to seaborn.clustermap
 	#Set colormap for main heatmap, if necessary:
 	data_frame = df.copy()
 	if cmap is None:
@@ -179,7 +179,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 		if not row_cluster and row_sort!=False:
 			data_frame = data_frame.loc[row_sorted,:]
 		g = sns.clustermap(data_frame.drop(columns=categ_col),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap))
-		ncol = 1 + len(handles)//35
+		ncol = 1 + len(handles)//33
 	elif categ_col is None: #represent categories as a row of coded colors, independent of the main heatmap's colormap
 		counts = dict(data_frame.loc[categ_row].value_counts())
 		if col_sort==False:
@@ -195,7 +195,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 		if not col_cluster and col_sort!=False:
 			data_frame = data_frame[col_sorted]
 		g = sns.clustermap(data_frame.drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,col_colors=data_frame.loc[categ_row].rename('').map(catmap)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
-		ncol = 1 + len(handles)//35
+		ncol = 1 + len(handles)//33
 	else: #if both a category row and category column
 		counts_col = dict(data_frame.drop(index=categ_row)[categ_col].value_counts())
 		if row_sort==False:
@@ -228,7 +228,7 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 				row_sorted.append(categ_row)
 			data_frame = data_frame.loc[row_sorted,:]
 		g = sns.clustermap(data_frame.drop(columns=categ_col).drop(index=categ_row).astype('float64'),figsize=figsize,cmap=cmap,center=center,vmin=vmin,vmax=vmax,method=method,metric=metric,z_score=z_score,row_cluster=row_cluster,col_cluster=col_cluster,row_linkage=row_linkage,col_linkage=col_linkage,row_colors=data_frame[categ_col].rename('').map(catmap_col),col_colors=data_frame.loc[categ_row].rename('').map(catmap_row)) #need to coerce data_frame dtypes back to float, in case row of string categories forced object dtype for each column
-		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//35, 1 + len(handles_row)//35
+		legend_col_ncol, legend_row_ncol = 1 + len(handles_col)//33, 1 + len(handles_row)//33
 	g.cax.remove() #get rid of default colorbar
 	fig, ax = g.fig, g.ax_heatmap
 	if title is not None:
@@ -348,15 +348,29 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 	else:
 		fig.savefig(savepath) #must use this method; g.savefig won't preserve adjustmnents made to layout
 	plt.close(fig)
+	if return_reordered:
+		if row_cluster:
+			row_ind = g.dendrogram_row.reordered_ind
+		else:
+			row_ind = list(range(len(data_frame.index)))
+			if categ_row is not None:
+				row_ind = row_ind[:len(row_ind)-1]
+		if col_cluster:
+			col_ind = g.dendrogram_col.reordered_ind
+		else:
+			col_ind = list(range(len(data_frame.columns)))
+			if categ_col is not None:
+				col_ind = col_ind[:len(col_ind)-1]
+		return data_frame.iloc[row_ind,col_ind]
 
 
 
 class pca:
 	def __init__(self,data_frame,categ_col=None,n_components=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
 		if categ_col is None or type(categ_col) != str:
-			self.data = data_frame
+			self.data = data_frame.copy()
 		else:
-			self.data = data_frame.drop(columns=categ_col)			
+			self.data = data_frame.copy().drop(columns=categ_col)			
 		pca = PCA(n_components=n_components,copy=False)
 		if n_components is None:
 			self.n_components = len(self.data.columns)
@@ -366,7 +380,7 @@ class pca:
 		self.components = pd.DataFrame(pca.components_,index=['PC%i'%i for i in range(self.n_components)],columns=self.data.columns)
 		if categ_col is not None and type(categ_col) == str:
 			self.reduced[categ_col] = data_frame[categ_col]
-	def plot(self,savepath=None,categ_col=None,highlights=None,figsize=(6.4,4.8),title=None,uncat='-1'):
+	def plot(self,savepath=None,categ_col=None,categ_sort=None,highlights=None,figsize=(6.4,4.8),title=None,uncat='-1'):
 		with sns.axes_style('darkgrid'):
 			fig, ax = plt.subplots(figsize=figsize)
 			if title is not None:
@@ -380,7 +394,16 @@ class pca:
 				categ_col = pd.Series(categ_col,index=self.reduced.index,dtype=str)
 			categ_col = categ_col.apply(no_float)
 			counts = dict(categ_col.value_counts())
-			categories = sorted(counts.keys(),key=label_sort)
+			if categ_sort is None:
+				categories = sorted(counts.keys(),key=label_sort)
+			elif callable(categ_sort):
+				categories = sorted(counts.keys(),key=categ_sort)
+			else:
+				if type(categ_sort)!=dict:
+					categ_sort = dict(zip([no_float(x) for x in categ_sort],range(len(categ_sort))))
+				else:
+					categ_sort = dict(zip([no_float(x) for x in categ_sort.keys()],categ_sort.values()))
+				categories = sorted(counts.keys(),key=lambda x: categ_sort[x])
 			catmap = categorical_palette(categories,uncat)
 			if highlights is None:
 				handles = [Patch(color=catmap[category],label=category+' (%i)'%counts[category]) for category in categories]
@@ -420,9 +443,9 @@ class tsne:
 			self.embedding.columns = self.embedding.columns.droplevel()
 		else:
 			if categ_col is None or type(categ_col) != str:
-				self.data = data_frame
+				self.data = data_frame.copy()
 			else:
-				self.data = data_frame.drop(columns=categ_col)
+				self.data = data_frame.copy().drop(columns=categ_col)
 			self.perplexity, self.early_exaggeration, self.learning_rate, self.metric, self.init = perplexity, early_exaggeration, learning_rate, metric, init
 			self.embedding = pd.DataFrame(TSNE(perplexity=perplexity,early_exaggeration=early_exaggeration,learning_rate=learning_rate,metric=metric,init=init,verbose=verbose).fit_transform(self.data),index=self.data.index,columns=['tSNE 1','tSNE 2'])
 			if categ_col is not None and type(categ_col) == str:
@@ -430,7 +453,7 @@ class tsne:
 	def to_csv(self,filepath): #since tsne nondeterministic, useful to be able to save embeddings that look particularly good for later use
 		header = 'perplexity: '+str(self.perplexity)+', early_exaggeration: '+str(self.early_exaggeration)+', learning_rate: '+str(self.learning_rate)+', metric: '+str(self.metric)+', init: '+str(self.init)
 		pd.DataFrame(self.embedding.values,index=self.embedding.index,columns=pd.MultiIndex.from_arrays([[header]+[' ' for i in range(len(self.embedding.columns)-1)],self.embedding.columns])).to_csv(filepath) #MultiIndex trick to effectively add a header row
-	def plot(self,savepath=None,categ_col=None,highlights=None,figsize=(6.4,4.8),title=None,uncat='-1'):
+	def plot(self,savepath=None,categ_col=None,categ_sort=None,highlights=None,figsize=(6.4,4.8),title=None,uncat='-1'):
 		with sns.axes_style('darkgrid'):
 			fig, ax = plt.subplots(figsize=figsize)
 			if title is not None:
@@ -444,7 +467,16 @@ class tsne:
 				categ_col = pd.Series(categ_col,index=self.embedding.index,dtype=str)
 			categ_col = categ_col.apply(no_float)
 			counts = dict(categ_col.value_counts())
-			categories = sorted(counts.keys(),key=label_sort)
+			if categ_sort is None:
+				categories = sorted(counts.keys(),key=label_sort)
+			elif callable(categ_sort):
+				categories = sorted(counts.keys(),key=categ_sort)
+			else:
+				if type(categ_sort)!=dict:
+					categ_sort = dict(zip([no_float(x) for x in categ_sort],range(len(categ_sort))))
+				else:
+					categ_sort = dict(zip([no_float(x) for x in categ_sort.keys()],categ_sort.values()))
+				categories = sorted(counts.keys(),key=lambda x: categ_sort[x])
 			catmap = categorical_palette(categories,uncat)
 			if highlights is None:
 				handles = [Patch(color=catmap[category],label=category+' (%i)'%counts[category]) for category in categories]
