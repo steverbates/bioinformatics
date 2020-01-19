@@ -11,6 +11,7 @@ from keras.models import Sequential
 from math import log10, exp
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
+from scipy.cluster.hierarchy import fcluster
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -786,49 +787,27 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 			y.append(Y[order])
 		return x,y
 
-#Untested after this point:
-'''
-
-#from sklearn.cluster import AgglomerativeClustering, DBSCAN, KMeans
-class hier_agg_cluster:
-	def __init__(self,data_frame,n_clusters=2,affinity='euclidean',memory=None,connectivity=None,compute_full_tree='auto',linkage='ward',distance_threshold=None,rescale=True):
-		self.data = data_frame
-		if rescale:
-			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
-		else:
-			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-		model = AgglomerativeClustering(n_clusters=n_clusters,affinity=affinity,memory=memory,connectivity=connectivity,compute_full_tree=compute_full_tree,linkage=linkage,pooling_func=pooling_func,distance_threshold=distance_threshold)
-		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
-		self.n_clusters, self.n_leaves, self.n_connected_components, self.children = model.n_clusters_, model.n_leaves_, model.n_connected_components_, model.children_
 
 
+def sculpt_tree(Z,n,min_samples=3): #cut dendrogram represented by linkage matrix Z to give n categories subject to constraint that each category must have at least min_samples members
+	m, max_cats, true_n_hist = n, len(Z)/min_samples, []
+	labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
+	counts = labels.value_counts().sort_index()
+	cats, true_n = list(counts.index), sum(counts>=min_samples)
+	while true_n < n:
+		m+=1
+		if m > max_cats: #this break condition implicitly makes the assumption that true_n will keep increasing, which seems reasonable.  However, it may stop increasing sooner than absolute maximum number of categories hit, so could use some optimizing here still
+			print('break')
+			break
+		labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
+		counts = labels.value_counts().sort_index()
+		cats, true_n = list(counts.index), sum(counts>=min_samples)
+	true_counts, orphan_counts = counts[counts>=min_samples], counts[counts<min_samples]
+	true_cats, orphans = list(true_counts.index), list(orphan_counts.index)
+	remap = dict(zip(true_cats,range(len(true_cats))))
+	remap.update(dict(zip(orphans,[int(-1) for i in range(len(orphans))])))
+	return labels.map(remap)
 
-class DBSCAN_cluster:
-	def __init__(self,data_frame,eps=0.5,min_samples=5,metric='euclidean',metric_params=None,algorithm='auto',leaf_size=30,p=None,n_jobs=None,rescale=True):
-		self.data = data_frame
-		if rescale:
-			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
-		else:
-			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-		model = DBSCANneps=neps,min_samples=min_samples,metric=metric,metric_params=metric_params,algorithm=algorithm,leaf_size=leaf_size,p=p,n_jobs=n_jobs)
-		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
-#		def tsne_embed(self,perplexity=30.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=0):
-#			self.tsne_embedding = 1
 
 
-'''
-
-
-'''
-
-class shared_nn_cluster:
-	def __init__(self,data_frame):
-		self.data = data_frame
-	if rescale:
-		self.scale_factors = self.data.apply(scale_calc,axis=0)
-	else:
-		self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-'''	
-
-#import sklearn.impute
 
