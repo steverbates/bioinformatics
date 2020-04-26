@@ -6,8 +6,6 @@ import numpy as np
 import pandas as pd
 import random
 import seaborn as sns
-from keras.layers import Dense
-from keras.models import Sequential
 from math import log10, exp
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
@@ -293,26 +291,14 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 	#Get default parameters for positioning of axes, associated text, and legends:
 	cb_ax_tightbbox = c.ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	ax_tightbbox = ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	row_dendrogram_tightbbox = g.ax_row_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	col_dendrogram_tightbbox = g.ax_col_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	cb_ax_extent = c.ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	ax_extent = ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	row_dendrogram_extent = g.ax_row_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	col_dendrogram_extent = g.ax_col_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	if categ_col is not None:
-		row_colors_tightbbox = g.ax_row_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 		row_colors_extent = g.ax_row_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	if categ_row is not None:
-		col_colors_tightbbox = g.ax_col_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 		col_colors_extent = g.ax_col_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	if categ_col is not None and categ_row is not None:
-		legend_col_tightbbox = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_row_tightbbox = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_col_extent = legend_col.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_row_extent = legend_row.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	elif categ_col is not None or categ_row is not None:
-		legend_tightbbox = legend.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_extent = legend.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	#Calculate parameters for repositioning subplots (heatmap, dendrograms, row/column colors):
 	subplots_right = fig.subplotpars.right + cb_ax_tightbbox.x1 - ax_tightbbox.x1 #align right edge of heatmap tightbbox to colorbar tightbbox
 	if row_cluster: #align left edge of row dendrogram to left edge of colorbar
@@ -363,8 +349,6 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 			if categ_col is not None:
 				col_ind = col_ind[:len(col_ind)-1]
 		return data_frame.iloc[row_ind,col_ind]
-
-
 
 class pca:
 	def __init__(self,data_frame,categ_col=None,n_components=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
@@ -667,94 +651,6 @@ class random_forest_classifier:
 
 
 
-class dense_network_classifier:
-	def __init__(self,data_frame,class_col,scalar_cols=None,units=[16],activation='relu',use_bias=True,kernel_initializer='glorot_uniform',bias_initializer='zeros',kernel_regularizer=None,bias_regularizer=None,activity_regularizer=None,kernel_constraint=None,bias_constraint=None,optimizer='rmsprop',metrics=['accuracy'],epochs=10,batch_size=None,verbose=1,validation_split=0.15,validation_data=None,class_weight=None,sample_weight=None,steps_per_epoch=None,validation_steps=None,rescale=True,pos_label=None): #Neural network model for classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probality in sigmoid output function) in two-way classification. Assumption is that there are at least two densely connected layers in sequence, with either a softmax or signmoid activation in the final layer, to ouput probabilities.  The other layers are all assumed to have the same activation, with sizes set by the list of items in the units paramater. All other parameters defaults to pass to keras model and layers.
-		self.y = data_frame[class_col]
-		self.y_one_hot = pd.get_dummies(self.y)
-		if scalar_cols is None:
-			self.X = data_frame.drop(columns=class_col)
-			scalar_cols = self.X.columns
-		else:
-			self.X = data_frame[scalar_cols]
-		if rescale:
-			self.scale_factors = self.X.apply(scale_factor_calc,axis=0)
-		else:
-			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
-		self.scalar_cols, self.class_col = scalar_cols, class_col
-		self.class_labels = self.y_one_hot.columns
-		if len(self.class_labels) == 2:
-			if pos_label is None or pos_label not in self.class_labels:
-				self.pos_label = self.class_labels[1]
-			else:
-				self.pos_label = pos_label
-				if self.class_labels[1] != pos_label:
-					self.class_labels[0] = self.class_labels[1]
-					self.class_labels[1] = pos_label
-		self.model = Sequential()
-		self.model.add(Dense(units=units[0],activation=activation,use_bias=use_bias,kernel_initializer=kernel_initializer,bias_initializer=bias_initializer,kernel_regularizer=kernel_regularizer,bias_regularizer=bias_regularizer,activity_regularizer=activity_regularizer,kernel_constraint=kernel_constraint,bias_constraint=bias_constraint,input_shape=(len(scalar_cols),)))
-		if len(units) > 1:
-			for u in units[1:]:
-				self.model.add(Dense(units=u,activation=activation,use_bias=use_bias,kernel_initializer=kernel_initializer,bias_initializer=bias_initializer,kernel_regularizer=kernel_regularizer,bias_regularizer=bias_regularizer,activity_regularizer=activity_regularizer,kernel_constraint=kernel_constraint,bias_constraint=bias_constraint))
-		if len(self.class_labels) > 2:
-			self.model.add(Dense(units=len(self.class_labels),activation='softmax'))
-			loss = 'categorical_crossentropy' #to make sure label order stays the same
-			self.model.compile(optimizer=optimizer,loss=loss,metrics=metrics)
-			self.history = self.model.fit(self.X/self.scale_factors,self.y_one_hot,epochs=epochs,batch_size=batch_size,verbose=verbose,validation_split=validation_split,validation_data=validation_data,class_weight=class_weight,sample_weight=sample_weight,steps_per_epoch=steps_per_epoch,validation_steps=validation_steps)
-		else:
-			self.model.add(Dense(units=1,activation='sigmoid'))
-			loss = 'binary_crossentropy'
-			self.model.compile(optimizer=optimizer,loss=loss,metrics=metrics)
-			d = {label:i for i,label in enumerate(self.class_labels)}
-			self.history = self.model.fit(self.X/self.scale_factors,self.y.map(d),epochs=epochs,batch_size=batch_size,verbose=verbose,validation_split=validation_split,validation_data=validation_data,class_weight=class_weight,sample_weight=sample_weight,steps_per_epoch=steps_per_epoch,validation_steps=validation_steps)
-		self.loss, self.acc, self.epochs = self.history.history['loss'], self.history.history['acc'], range(1,epochs+1)
-		self.validation_split, self.validation_data, self.batch_size = validation_split, validation_data, batch_size
-		if validation_split > 0.0 or validation_data is not None:
-			self.val_loss, self.val_acc = self.history.history['val_loss'], self.history.history['val_acc']
-	def plot_history(self,savepath=None,figsize=(6.4,4.8)):
-		sns.set(palette='bright')
-		fig,axes = plt.subplots(2,sharex='col',figsize=figsize)
-		axes[1].plot(self.epochs, self.acc, 'oc', label='Training')
-		axes[0].plot(self.epochs,self.loss, 'oc', label='Training')
-		if self.validation_split > 0.0 or self.validation_data is not None:
-			axes[1].plot(self.epochs, self.val_acc, '-g', label='Validation')
-			axes[0].plot(self.epochs, self.val_loss, '-g', label='Validation')
-		axes[0].legend(bbox_to_anchor=(0., 1.02),loc='lower center',ncol=2)	
-		axes[0].set_ylabel('Loss')
-		axes[1].set_ylabel('Accuracy')
-		plt.xlabel('Epochs')
-		if savepath is None:
-			plt.show()
-			plt.close('fig')
-		else:
-			plt.savefig(savepath)
-			plt.close('fig')
-	def predict(self,x=None,batch_size=32,verbose=1):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_classes(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose),index=x.index,columns=['Predicted Class']).applymap(lambda i: self.class_labels[i])
-	def predict_proba(self,x=None,batch_size=None,verbose=1,steps=None):
-		if x is None:
-			x = self.X
-		if len(self.class_labels) > 2:
-			return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose,steps=steps),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-		else:
-			p = self.model.predict(x[self.scalar_cols]/self.scale_factors,batch_size=batch_size,verbose=verbose,steps=steps).flatten()
-			q = 1-p
-			return pd.DataFrame({'P('+str(self.class_labels[0])+')':q,'P('+str(self.class_labels[1])+')':p},index=x.index)
-	def confusion_matrix(self,x=None,sample_weight=None):
-		if x is None:
-			y_true, y_pred = self.y, self.predict()
-		else:
-			y_true, y_pred = x[self.class_col], self.predict(x)
-		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
-		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
-	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
-		if title is None:
-			title = '%s Dense Neural Network Classifier ROC Curve'%(self.class_col,)
-		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
-
-
-
 #Function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
 def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  Fold parameter used to generate a set of samples for cross-validation
 	n,p = len(negatives),len(positives)
@@ -789,7 +685,7 @@ def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  
 
 
 
-def sculpt_tree(Z,n,min_samples=3): #cut dendrogram represented by linkage matrix Z to give n categories subject to constraint that each category must have at least min_samples members
+def sculpt_tree(Z,n,min_samples=3): #cut dendrogram to give n categories subject to constraint that each category must have at least min_samples members
 	m, max_cats, true_n_hist = n, len(Z)/min_samples, []
 	labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
 	counts = labels.value_counts().sort_index()
@@ -808,6 +704,49 @@ def sculpt_tree(Z,n,min_samples=3): #cut dendrogram represented by linkage matri
 	remap.update(dict(zip(orphans,[int(-1) for i in range(len(orphans))])))
 	return labels.map(remap)
 
+#Untested after this point:
+'''
+
+#from sklearn.cluster import AgglomerativeClustering, DBSCAN, KMeans
+class hier_agg_cluster:
+	def __init__(self,data_frame,n_clusters=2,affinity='euclidean',memory=None,connectivity=None,compute_full_tree='auto',linkage='ward',distance_threshold=None,rescale=True):
+		self.data = data_frame
+		if rescale:
+			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+		else:
+			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+		model = AgglomerativeClustering(n_clusters=n_clusters,affinity=affinity,memory=memory,connectivity=connectivity,compute_full_tree=compute_full_tree,linkage=linkage,pooling_func=pooling_func,distance_threshold=distance_threshold)
+		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
+		self.n_clusters, self.n_leaves, self.n_connected_components, self.children = model.n_clusters_, model.n_leaves_, model.n_connected_components_, model.children_
 
 
+
+class DBSCAN_cluster:
+	def __init__(self,data_frame,eps=0.5,min_samples=5,metric='euclidean',metric_params=None,algorithm='auto',leaf_size=30,p=None,n_jobs=None,rescale=True):
+		self.data = data_frame
+		if rescale:
+			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+		else:
+			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+		model = DBSCANneps=neps,min_samples=min_samples,metric=metric,metric_params=metric_params,algorithm=algorithm,leaf_size=leaf_size,p=p,n_jobs=n_jobs)
+		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
+#		def tsne_embed(self,perplexity=30.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=0):
+#			self.tsne_embedding = 1
+
+
+'''
+
+
+'''
+
+class shared_nn_cluster:
+	def __init__(self,data_frame):
+		self.data = data_frame
+	if rescale:
+		self.scale_factors = self.data.apply(scale_calc,axis=0)
+	else:
+		self.scale_factors = self.data.apply(lambda x: 1,axis=0)
+'''	
+
+#import sklearn.impute
 

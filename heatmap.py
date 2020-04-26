@@ -212,26 +212,14 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 	#Get default parameters for positioning of axes, associated text, and legends:
 	cb_ax_tightbbox = c.ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	ax_tightbbox = ax.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	row_dendrogram_tightbbox = g.ax_row_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	col_dendrogram_tightbbox = g.ax_col_dendrogram.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	cb_ax_extent = c.ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	ax_extent = ax.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	row_dendrogram_extent = g.ax_row_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	col_dendrogram_extent = g.ax_col_dendrogram.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	if categ_col is not None:
-		row_colors_tightbbox = g.ax_row_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 		row_colors_extent = g.ax_row_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	if categ_row is not None:
-		col_colors_tightbbox = g.ax_col_colors.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 		col_colors_extent = g.ax_col_colors.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	if categ_col is not None and categ_row is not None:
-		legend_col_tightbbox = legend_col.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_row_tightbbox = legend_row.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_col_extent = legend_col.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_row_extent = legend_row.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-	elif categ_col is not None or categ_row is not None:
-		legend_tightbbox = legend.get_tightbbox(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
-		legend_extent = legend.get_window_extent(fig.canvas.get_renderer()).inverse_transformed(fig.transFigure)
 	#Calculate parameters for repositioning subplots (heatmap, dendrograms, row/column colors):
 	subplots_right = fig.subplotpars.right + cb_ax_tightbbox.x1 - ax_tightbbox.x1 #align right edge of heatmap tightbbox to colorbar tightbbox
 	if row_cluster: #align left edge of row dendrogram to left edge of colorbar
