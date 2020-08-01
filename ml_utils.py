@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import random
 import seaborn as sns
+from joblib import dump,load 
 from math import log10, exp
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Patch
@@ -16,6 +17,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 from sklearn.neighbors import KNeighborsClassifier
+
+
 
 
 
@@ -62,12 +65,13 @@ def log10_fano(array):
 
 
 
-def scale_factor_calc(series): #for inputting data into models, to enable rescaling of data to maximum value for each variable; avoids division by zero in case of variables which are zero for all samples
-	a = np.max(series)
-	if a == 0:
-		return 1
+def rescale_factors_calc(series): #for inputting data into models
+	minimum,maximum = np.min(series), np.max(series)
+	range_ = maximum - minimum
+	if range_==0:
+		return minimum,1 #to avoid division by zero when actually applying scale factors
 	else:
-		return a
+		return minimum,range_
 
 
 
@@ -92,30 +96,58 @@ def logistic(t):
 
 
 
-def roc_auc(model,x=None,savepath=None,sample_weight=None,drop_intermediate=True,title='ROC Curve'): #to be called as method on binary classifiers
-	if len(model.class_labels)!=2:
-		return None
-	if x is None: #x is test data set including true class assignments; if no x provided; calculation is made on model's training set
-		y_true,y_score = model.y,model.predict_proba(model.X)['P(%s)'%(model.pos_label)]
+def sculpt_tree(Z,n,min_samples=3): #cut dendrogram to give n categories subject to constraint that each category must have at least min_samples members
+	m, max_cats, true_n_hist = n, len(Z)/min_samples, []
+	labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
+	counts = labels.value_counts().sort_index()
+	cats, true_n = list(counts.index), sum(counts>=min_samples)
+	while true_n < n:
+		m+=1
+		if m > max_cats: #this break condition implicitly makes the assumption that true_n will keep increasing, which seems reasonable.  However, it may stop increasing sooner than absolute maximum number of categories hit, so could use some optimizing here still
+			print('break')
+			break
+		labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
+		counts = labels.value_counts().sort_index()
+		cats, true_n = list(counts.index), sum(counts>=min_samples)
+	true_counts, orphan_counts = counts[counts>=min_samples], counts[counts<min_samples]
+	true_cats, orphans = list(true_counts.index), list(orphan_counts.index)
+	remap = dict(zip(true_cats,range(len(true_cats))))
+	remap.update(dict(zip(orphans,[int(-1) for i in range(len(orphans))])))
+	return labels.map(remap)
+
+
+
+#Function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
+def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  Fold parameter used to generate a set of samples for cross-validation
+	n,p = len(negatives),len(positives)
+	if fold==1:
+		if n<p:
+			x = np.concatenate((positives.sample(n=n).values,negatives.values))
+			y = np.concatenate((np.ones(n),np.zeros(n)))
+			order = np.arange(2*n) 
+		else:
+			x = np.concatenate((positives.values,negatives.sample(n=p).values))
+			y = np.concatenate((np.ones(p),np.zeros(p)))
+			order = np.arange(2*p)
+		np.random.shuffle(order)
+		return x[order,:],y[order] #shuffling positive and negative data before output; otherwise fit function would take validation split from back end i.e. all negative data
 	else:
-		y_true,y_score = x[model.class_col],model.predict_proba(x)['P(%s)'%(model.pos_label)]
-	fpr,tpr,thresholds = roc_curve(y_true,y_score,pos_label=model.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
-	area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-	plt.clf()
-	sns.set()
-	plt.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
-	plt.legend(loc='lower right')
-	plt.plot([0,1],[0,1],'--b')
-	plt.xlabel('false positive rate')
-	plt.ylabel('true positive rate')
-	plt.title(title)
-	if savepath is None:
-		plt.show()
-		plt.close()
-	else:
-		plt.savefig(savepath)
-		plt.close()
-	return area
+		if n<p:
+			P = np.array_split(positives.sample(n=n).values,fold)
+			N = np.array_split(negatives.values,fold)
+		else:
+			P = np.array_split(positives.values,fold)
+			N = np.array_split(negatives.sample(n=p).values,fold)
+		x,y = [],[]
+		for i in range(len(P)):
+			X = np.concatenate((P[i],N[i]))
+			q = int(len(X)/2)
+			Y = np.concatenate((np.ones(q),np.zeros(q)))
+			order = np.arange(2*q)
+			np.random.shuffle(order)
+			x.append(X[order,:])
+			y.append(Y[order])
+		return x,y
 
 
 
@@ -350,6 +382,9 @@ def heatmap(df,categ_col=None,categ_row=None,categ_col_uncat='-1',categ_row_unca
 				col_ind = col_ind[:len(col_ind)-1]
 		return data_frame.iloc[row_ind,col_ind]
 
+
+
+
 class pca:
 	def __init__(self,data_frame,categ_col=None,n_components=None): #data_frame rows are samples, columns are variable names; assume data already recentered/scaled as appropriate
 		if categ_col is None or type(categ_col) != str:
@@ -491,262 +526,285 @@ class tsne:
 
 
 
-class log_reg_classifier:
-	def __init__(self, data_frame,class_col,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
-		self.y = data_frame[class_col]
-		if scalar_cols is None:
-			self.X = data_frame.drop(columns=class_col)
-			scalar_cols = self.X.columns
-		else:
-			self.X = data_frame[scalar_cols]
-		if rescale:
-			self.scale_factors = np.max(self.X,axis=0)
-		else:
-			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
-		self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y,sample_weight=sample_weight)
-		self.intercept = self.model.intercept_[0]
-		self.coefficients = self.model.coef_[0]/self.scale_factors
-		self.class_labels = self.model.classes_
-		if len(self.class_labels) == 2:
-			if pos_label is None or pos_label not in self.class_labels:
-				self.pos_label = self.class_labels[1]
-			else:
-				self.pos_label = pos_label
-				if self.class_labels[1] != pos_label:
-					self.class_labels[0] = self.class_labels[1]
-					self.class_labels[1] = pos_label
-		self.scalar_cols = scalar_cols
-		self.class_col = class_col
-	def predict(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def predict_proba(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def predict_log_proba(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
-	def confusion_matrix(self,x=None,sample_weight=None):
-		if x is None:
-			y_true, y_pred = self.y, self.predict(self.X)
-		else:
-			y_true, y_pred = x[self.class_col], self.predict(x)
-		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
-		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
-	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
-		if title is None:
-			title = '%s Logistic Regression Model ROC Curve'%(self.class_col)
-		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
-	def decision_function(self,x):
-		return pd.DataFrame(self.model.decision_function(x[self.scalar_cols]/self.scale_factors),index=x.index)
-	def predictors(self,x=None):
-		if x is None:
-			x = self.X
-		frame = pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=self.class_labels)
-		return frame[frame.columns[1]] - frame[frame.columns[0]]
-
-
-
-class knn_classifier:
-	def __init__(self,data_frame,class_col,scalar_cols=None,n_neighbors=5, weights='uniform', algorithm='auto', leaf_size=30, p=2, metric='minkowski', metric_params=None, n_jobs=None,rescale=True,pos_label=None): #Supervised nearest neighbors model for classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters defaults to pass to KNeighborsClassifier class.
-		self.y = data_frame[class_col]
-		if scalar_cols is None:
-			self.X = data_frame.drop(columns=class_col)
-			scalar_cols = self.X.columns
-		else:
-			self.X = data_frame[scalar_cols]
-		if rescale:
-			self.scale_factors = np.max(self.X,axis=0)
-		else:
-			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
-		self.model = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, algorithm=algorithm, leaf_size=leaf_size, p=p, metric=metric, metric_params=metric_params, n_jobs=n_jobs).fit(self.X/self.scale_factors,self.y)
-		self.scalar_cols = scalar_cols
-		self.class_col = class_col
-		self.class_labels = sorted(data_frame[class_col].unique())
-		if len(self.class_labels) == 2:
-			if pos_label is None or pos_label not in self.class_labels:
-				self.pos_label = self.class_labels[1]
-			else:
-				self.pos_label = pos_label
-				if self.class_labels[1] != pos_label:
-					self.class_labels[0] = self.class_labels[1]
-					self.class_labels[1] = pos_label
-		self.n_neighbors = n_neighbors
-	def predict(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def predict_proba(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def confusion_matrix(self,x=None,sample_weight=None):
-		if x is None:
-			y_true, y_pred = self.y, self.predict(self.X)
-		else:
-			y_true, y_pred = x[self.class_col], self.predict(x)
-		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
-		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
-	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
-		if title is None:
-			title = '%s %s-Nearest Neighbors Model ROC Curve'%(self.class_col,str(self.n_neighbors))
-		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
-
-
-
 class random_forest_classifier:
-	def __init__(self,data_frame,class_col,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  class_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters defaults to pass to RandomForestClassifier class.
-		self.y = data_frame[class_col]
-		if scalar_cols is None:
-			self.X = data_frame.drop(columns=class_col)
-			scalar_cols = self.X.columns
+	def __init__(self,data_frame,categ_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters are defaults to pass to RandomForestClassifier class.
+		if type(data_frame) == str: #if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
+			saved = load(data_frame)
+			for var in vars(saved).keys():
+				setattr(self,var,vars(saved)[var])
 		else:
-			self.X = data_frame[scalar_cols]
-		if rescale:
-			self.scale_factors = np.max(self.X,axis=0)
-		else:
-			self.scale_factors = self.X.apply(lambda x: 1,axis=0)
-		self.model = RandomForestClassifier(n_estimators=n_estimators,criterion=criterion,max_depth=max_depth,min_samples_split=min_samples_split,min_samples_leaf=min_samples_leaf,min_weight_fraction_leaf=min_weight_fraction_leaf,max_features=max_features,max_leaf_nodes=max_leaf_nodes,min_impurity_decrease=min_impurity_decrease,min_impurity_split=min_impurity_split,bootstrap=bootstrap,oob_score=oob_score,n_jobs=n_jobs,random_state=random_state,verbose=verbose,warm_start=warm_start,class_weight=class_weight).fit(self.X/self.scale_factors,self.y,sample_weight=sample_weight)
-		self.scalar_cols = scalar_cols
-		self.class_col = class_col
-		self.class_labels = self.model.classes_
-		if len(self.class_labels) == 2:
-			if pos_label is None or pos_label not in self.class_labels:
-				self.pos_label = self.class_labels[1]
+			if categ_col is None:
+				categ_col = data_frame.columns[-1]
+			elif type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
+				data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
+				categ_col = 'categ_col'
+			self.y_train = data_frame[categ_col]
+			if scalar_cols is None:
+				self.X_train = data_frame.drop(columns=categ_col)
+				scalar_cols = self.X_train.columns
 			else:
-				self.pos_label = pos_label
-				if self.class_labels[1] != pos_label:
-					self.class_labels[0] = self.class_labels[1]
-					self.class_labels[1] = pos_label
-		self.feature_importances = self.model.feature_importances_
-		if oob_score:
-			self.oob_score = self.model.oob_score_
-			self.oob_decision_function = self.model.oob_decision_function_
-	def predict(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['Predicted Class'])
-	def predict_proba(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['P(%s)'%s for s in self.class_labels])
-	def predict_log_proba(self,x=None):
-		if x is None:
-			x = self.X
-		return pd.DataFrame(self.model.predict_log_proba(x[self.scalar_cols]/self.scale_factors),index=x.index,columns=['log(P(%s))'%s for s in self.class_labels])
-	def confusion_matrix(self,x=None,sample_weight=None):
-		if x is None:
-			y_true, y_pred = self.y, self.predict(self.X)
+				self.X_train = data_frame[scalar_cols]
+			if rescale:
+				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(rescale_factors_calc,axis=0)),columns=['minima','ranges'])
+			else:
+				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(lambda x: (0,1),axis=0)),columns=['minima','ranges'])
+			self.model = RandomForestClassifier(n_estimators=n_estimators,criterion=criterion,max_depth=max_depth,min_samples_split=min_samples_split,min_samples_leaf=min_samples_leaf,min_weight_fraction_leaf=min_weight_fraction_leaf,max_features=max_features,max_leaf_nodes=max_leaf_nodes,min_impurity_decrease=min_impurity_decrease,min_impurity_split=min_impurity_split,bootstrap=bootstrap,oob_score=oob_score,n_jobs=n_jobs,random_state=random_state,verbose=verbose,warm_start=warm_start,class_weight=class_weight).fit((self.X_train - self.rescale_factors['minima'])/self.rescale_factors['ranges'],self.y_train,sample_weight=sample_weight)
+			self.scalar_cols = scalar_cols
+			self.categ_col = categ_col
+			self.class_labels = self.model.classes_
+			if len(self.class_labels) == 2: #Need to identify positive/negative labels to calculate ROC curve, sensitivity, specificity, false positive rate, positive predictive value
+				if pos_label is None or pos_label not in self.class_labels:
+					self.pos_label = self.class_labels[1]
+				else:
+					self.pos_label = pos_label
+					if self.class_labels[1] != pos_label:
+						self.class_labels[0] = self.class_labels[1]
+						self.class_labels[1] = pos_label
+	def predict(self,X=None):
+		if X is None:
+			X = self.X_test
 		else:
-			y_true, y_pred = x[self.class_col], self.predict(x)
-		cm = confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight)
-		return pd.DataFrame(cm,index=['%s True'%s for s in self.class_labels],columns=['%s Pred.'%s for s in self.class_labels])
-	def roc_auc(self,x=None,filepath=None,sample_weight=None,drop_intermediate=True,title=None):
+			self.X_test = X
+		self.y_pred = pd.Series(self.model.predict((X[self.scalar_cols]-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=X.index)
+		try:
+			delattr(self,'y_pred_proba')
+		except:
+			pass
+		return self.y_pred
+	def predict_proba(self,X=None):
+		if X is None:
+			X = self.X_test
+		else:
+			self.X_test = X
+		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((X[self.scalar_cols]-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=X.index,columns=['P(%s)'%s for s in self.class_labels])
+		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		return self.y_pred_proba
+	def confusion_matrix(self,X=None,sample_weight=None):
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+			self.cm = cm
+		else:
+			cm = self.cm
+		return cm
+	def confusion_matrix_plot(self,X=None,savepath=None,sample_weight=None,title=None,figsize=(6.4,4.8),cmap='hot_r'):
 		if title is None:
-			title = '%s Random Forest Model ROC Curve'%(self.class_col)
-		return roc_auc(self,x,filepath=filepath,sample_weight=sample_weight,drop_intermediate=drop_intermediate,title=title)
-
-
-
-#Function to take an unbalanced data set for a two-fold classification problem (two possible classes: positive or negative) and effectively balance it, producing a data set with the same population size for each class.  The class with the smaller population in the unbalanced data set will be unaltered in the balanced data set, while a sample of the same size will be randomly chosen without replacement from the other class.
-def assemble_input_set(positives,negatives,fold=1): #Assumes dataframe inputs.  Fold parameter used to generate a set of samples for cross-validation
-	n,p = len(negatives),len(positives)
-	if fold==1:
-		if n<p:
-			x = np.concatenate((positives.sample(n=n).values,negatives.values))
-			y = np.concatenate((np.ones(n),np.zeros(n)))
-			order = np.arange(2*n) 
+			title = '%s Random Forest Model Confusion Matrix'%(self.categ_col)
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
+			self.cm = cm
 		else:
-			x = np.concatenate((positives.values,negatives.sample(n=p).values))
-			y = np.concatenate((np.ones(p),np.zeros(p)))
-			order = np.arange(2*p)
-		np.random.shuffle(order)
-		return x[order,:],y[order] #shuffling positive and negative data before output; otherwise fit function would take validation split from back end i.e. all negative data
-	else:
-		if n<p:
-			P = np.array_split(positives.sample(n=n).values,fold)
-			N = np.array_split(negatives.values,fold)
+			cm = self.cm
+		fig, ax = plt.subplots(figsize=figsize)
+		sns.heatmap(cm,cmap=cmap,vmax=max([cm[col].nlargest(2)[1] for col in cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
+		ax.set_yticklabels(ax.get_yticklabels(),rotation=0)
+		ax.set_title(title)
+		fig.tight_layout()
+		if savepath is None:
+			plt.show()
 		else:
-			P = np.array_split(positives.values,fold)
-			N = np.array_split(negatives.sample(n=p).values,fold)
-		x,y = [],[]
-		for i in range(len(P)):
-			X = np.concatenate((P[i],N[i]))
-			q = int(len(X)/2)
-			Y = np.concatenate((np.ones(q),np.zeros(q)))
-			order = np.arange(2*q)
-			np.random.shuffle(order)
-			x.append(X[order,:])
-			y.append(Y[order])
-		return x,y
-
-
-
-def sculpt_tree(Z,n,min_samples=3): #cut dendrogram to give n categories subject to constraint that each category must have at least min_samples members
-	m, max_cats, true_n_hist = n, len(Z)/min_samples, []
-	labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
-	counts = labels.value_counts().sort_index()
-	cats, true_n = list(counts.index), sum(counts>=min_samples)
-	while true_n < n:
-		m+=1
-		if m > max_cats: #this break condition implicitly makes the assumption that true_n will keep increasing, which seems reasonable.  However, it may stop increasing sooner than absolute maximum number of categories hit, so could use some optimizing here still
-			print('break')
-			break
-		labels = pd.Series(fcluster(Z,m,criterion='maxclust'))
-		counts = labels.value_counts().sort_index()
-		cats, true_n = list(counts.index), sum(counts>=min_samples)
-	true_counts, orphan_counts = counts[counts>=min_samples], counts[counts<min_samples]
-	true_cats, orphans = list(true_counts.index), list(orphan_counts.index)
-	remap = dict(zip(true_cats,range(len(true_cats))))
-	remap.update(dict(zip(orphans,[int(-1) for i in range(len(orphans))])))
-	return labels.map(remap)
-
-#Untested after this point:
-'''
-
-#from sklearn.cluster import AgglomerativeClustering, DBSCAN, KMeans
-class hier_agg_cluster:
-	def __init__(self,data_frame,n_clusters=2,affinity='euclidean',memory=None,connectivity=None,compute_full_tree='auto',linkage='ward',distance_threshold=None,rescale=True):
-		self.data = data_frame
-		if rescale:
-			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+			fig.savefig(savepath)
+	def confusion_metrics(self,X=None,sample_weight=None):
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+			self.cm = cm
 		else:
-			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-		model = AgglomerativeClustering(n_clusters=n_clusters,affinity=affinity,memory=memory,connectivity=connectivity,compute_full_tree=compute_full_tree,linkage=linkage,pooling_func=pooling_func,distance_threshold=distance_threshold)
-		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
-		self.n_clusters, self.n_leaves, self.n_connected_components, self.children = model.n_clusters_, model.n_leaves_, model.n_connected_components_, model.children_
-
-
-
-class DBSCAN_cluster:
-	def __init__(self,data_frame,eps=0.5,min_samples=5,metric='euclidean',metric_params=None,algorithm='auto',leaf_size=30,p=None,n_jobs=None,rescale=True):
-		self.data = data_frame
-		if rescale:
-			self.scale_factors = self.data.apply(scale_factor_calc,axis=0)
+			cm = self.cm
+		acc = np.trace(cm)/cm.values.sum()
+		err = 1- acc
+		if len(self.class_labels)==2:
+			p = self.pos_label
+			n = [x for x in self.class_labels if x!= p][0]
+			sens = cm.loc['%s'%p,p]/cm.loc['%s'%p,:].sum()
+			spec = cm.loc['%s'%n,n]/cm.loc['%s'%n,:].sum()
+			ppv = cm.loc['%s'%p,p]/cm.loc[:,p].sum()
+			fpr = cm.loc['%s'%n,p]/cm.loc['%s'%n,:].sum()
+			return {'Accuracy':acc,'Error Rate':err,'Sensitivity':sens,'Specificity':spec,'Positive Predictive Value':ppv,'False Positive Rate':fpr}
+		return {'Accuracy':acc,'Error Rate':err}
+	def roc_auc(self,X=None,plot=True,savepath=None,sample_weight=None,drop_intermediate=True,title=None,figsize=(6.4,4.8)):
+		if title is None:
+			title = '%s Random Forest Model ROC Curve'%(self.categ_col)
+		if len(self.class_labels)!=2:
+			return None
+		if X is None:
+			y_true, y_score = self.y_test,self.predict_proba()['P(%s)'%(self.pos_label)]
 		else:
-			self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-		model = DBSCANneps=neps,min_samples=min_samples,metric=metric,metric_params=metric_params,algorithm=algorithm,leaf_size=leaf_size,p=p,n_jobs=n_jobs)
-		self.data['cluster'] = model.fit_predict(self.data/self.scale_factors)
-#		def tsne_embed(self,perplexity=30.0,learning_rate=200.0,metric='euclidean',init='pca',verbose=0):
-#			self.tsne_embedding = 1
+			y_true, y_score = X[self.categ_col],self.predict_proba(X)['P(%s)'%(self.pos_label)]
+			self.y_test = y_true
+		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
+		if plot:
+			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			fig, ax = plt.subplots(figsize=figsize)
+			sns.set()
+			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.legend(loc='lower right')
+			ax.plot([0,1],[0,1],'--b')
+			ax.set_xlabel('false positive rate')
+			ax.set_ylabel('true positive rate')
+			ax.set_title(title)
+			fig.tight_layout()
+			if savepath is None:
+				plt.show()
+			else:
+				fig.savefig(savepath)
+		self.roc_auc = area
+		return area
+	def save(self,savepath='random_forest_classifier.joblib'):
+		dump(self,savepath)
+	def delattr(self,attributes):
+		for attr in pd.Series(attributes):
+			delattr(self,attr)
+	def clear_data(self):
+		for attr in ['X_train','y_train','X_test','y_test','y_pred','y_pred_proba']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 
 
-'''
 
-
-'''
-
-class shared_nn_cluster:
-	def __init__(self,data_frame):
-		self.data = data_frame
-	if rescale:
-		self.scale_factors = self.data.apply(scale_calc,axis=0)
-	else:
-		self.scale_factors = self.data.apply(lambda x: 1,axis=0)
-'''	
-
-#import sklearn.impute
+class log_reg_classifier:
+	def __init__(self, data_frame,categ_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
+		if type(data_frame) == str: #if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
+			saved = load(data_frame)
+			for var in vars(saved).keys():
+				setattr(self,var,vars(saved)[var])
+		else:
+			if categ_col is None:
+				categ_col = data_frame.columns[-1]
+			elif type (categ_col) != str: #assumption is that categ_col is part of data_frame, so need to add it if it's been provided as a separate iterable
+				data_frame['categ_col'] = pd.Series(categ_col,index=data_frame.index)
+				categ_col = 'categ_col'
+			self.y_train = data_frame[categ_col]
+			if scalar_cols is None:
+				self.X_train = data_frame.drop(columns=categ_col)
+				scalar_cols = self.X_train.columns
+			else:
+				self.X_train = data_frame[scalar_cols]
+			if rescale:
+				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(rescale_factors_calc,axis=0)),columns=['minima','ranges'])
+			else:
+				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(lambda x: (0,1),axis=0)),columns=['minima','ranges'])
+			self.model = LogisticRegression(penalty=penalty, dual=dual, tol=tol, C=C, fit_intercept=fit_intercept, intercept_scaling=intercept_scaling, class_weight=class_weight, random_state=random_state, solver=solver, max_iter=max_iter, multi_class=multi_class, verbose=verbose, warm_start=warm_start, n_jobs=n_jobs).fit((self.X_train - self.rescale_factors['minima'])/self.rescale_factors['ranges'],self.y_train,sample_weight=sample_weight)
+			self.scalar_cols = scalar_cols
+			self.categ_col = categ_col
+			self.class_labels = self.model.classes_
+			if len(self.class_labels) == 2: #Need to identify positive/negative labels to calculate ROC curve, sensitivity, specificity, false positive rate, positive predictive value
+				if pos_label is None or pos_label not in self.class_labels:
+					self.pos_label = self.class_labels[1]
+				else:
+					self.pos_label = pos_label
+					if self.class_labels[1] != pos_label:
+						self.class_labels[0] = self.class_labels[1]
+						self.class_labels[1] = pos_label
+	def predict(self,X=None):
+		if X is None:
+			X = self.X_test
+		else:
+			self.X_test = X
+		self.y_pred = pd.Series(self.model.predict((X[self.scalar_cols]-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=X.index)
+		try:
+			delattr(self,'y_pred_proba')
+		except:
+			pass
+		return self.y_pred
+	def predict_proba(self,X=None):
+		if X is None:
+			X = self.X_test
+		else:
+			self.X_test = X
+		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((X[self.scalar_cols]-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=X.index,columns=['P(%s)'%s for s in self.class_labels])
+		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		return self.y_pred_proba
+	def confusion_matrix(self,X=None,sample_weight=None):
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+			self.cm = cm
+		else:
+			cm = self.cm
+		return cm
+	def confusion_matrix_plot(self,X=None,savepath=None,sample_weight=None,title=None,figsize=(6.4,4.8),cmap='hot_r'):
+		if title is None:
+			title = '%s Logistic Regression Model Confusion Matrix'%(self.categ_col)
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
+			self.cm = cm
+		else:
+			cm = self.cm
+		fig, ax = plt.subplots(figsize=figsize)
+		sns.heatmap(cm,cmap=cmap,vmax=max([cm[col].nlargest(2)[1] for col in cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
+		ax.set_yticklabels(ax.get_yticklabels(),rotation=0)
+		ax.set_title(title)
+		fig.tight_layout()
+		if savepath is None:
+			plt.show()
+		else:
+			fig.savefig(savepath)
+	def confusion_metrics(self,X=None,sample_weight=None):
+		if X is not None:
+			y_true, y_pred = X[self.categ_col], self.predict(X)
+			self.y_test = y_true
+			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+			self.cm = cm
+		else:
+			cm = self.cm
+		acc = np.trace(cm)/cm.values.sum()
+		err = 1- acc
+		if len(self.class_labels)==2:
+			p = self.pos_label
+			n = [x for x in self.class_labels if x!= p][0]
+			sens = cm.loc['%s'%p,p]/cm.loc['%s'%p,:].sum()
+			spec = cm.loc['%s'%n,n]/cm.loc['%s'%n,:].sum()
+			ppv = cm.loc['%s'%p,p]/cm.loc[:,p].sum()
+			fpr = cm.loc['%s'%n,p]/cm.loc['%s'%n,:].sum()
+			return {'Accuracy':acc,'Error Rate':err,'Sensitivity':sens,'Specificity':spec,'Positive Predictive Value':ppv,'False Positive Rate':fpr}
+		return {'Accuracy':acc,'Error Rate':err}
+	def roc_auc(self,X=None,plot=True,savepath=None,sample_weight=None,drop_intermediate=True,title=None,figsize=(6.4,4.8)):
+		if title is None:
+			title = '%s Logistic Regression Model ROC Curve'%(self.categ_col)
+		if len(self.class_labels)!=2:
+			return None
+		if X is None:
+			y_true, y_score = self.y_test,self.predict_proba()['P(%s)'%(self.pos_label)]
+		else:
+			y_true, y_score = X[self.categ_col],self.predict_proba(X)['P(%s)'%(self.pos_label)]
+			self.y_test = y_true
+		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
+		if plot:
+			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			fig, ax = plt.subplots(figsize=figsize)
+			sns.set()
+			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.legend(loc='lower right')
+			ax.plot([0,1],[0,1],'--b')
+			ax.set_xlabel('false positive rate')
+			ax.set_ylabel('true positive rate')
+			ax.set_title(title)
+			fig.tight_layout()
+			if savepath is None:
+				plt.show()
+			else:
+				fig.savefig(savepath)
+		self.roc_auc = area
+		return area
+	def save(self,savepath='log_reg_classifier.joblib'):
+		dump(self,savepath)
+	def delattr(self,attributes):
+		for attr in pd.Series(attributes):
+			delattr(self,attr)
+	def clear_data(self):
+		for attr in ['X_train','y_train','X_test','y_test','y_pred','y_pred_proba']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 
