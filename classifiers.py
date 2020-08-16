@@ -22,20 +22,15 @@ def rescale_factors_calc(series): #for inputting data into models
 class random_forest_classifier:
 	def __init__(self,data_frame,categ_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters are defaults to pass to RandomForestClassifier class.
 		if type(data_frame) != str:
-			if scalar_cols is None:
-				if categ_col is None:
-					self.y_train = data_frame[data_frame.columns[-1]]
-					self.X_train = data_frame.drop(columns=data_frame.columns[-1])
-				elif type(categ_col) == str:
-					self.y_train = data_frame[categ_col]
-					self.X_train = data_frame.drop(columns=categ_col)
-				else:
-					self.y_train = pd.Series(categ_col)
-					self.X_train = data_frame
-				scalar_cols = self.X_train.columns
+			if categ_col is None:
+				self.y_train, data_frame = data_frame[data_frame.columns[-1]], data_frame.drop(columns=data_frame.columns[-1])
+			elif type(categ_col) == str:
+				self.y_train, data_frame = data_frame[categ_col], data_frame.drop(columns=categ_col)
 			else:
-				self.X_train = data_frame[scalar_cols]
-			self.scalar_cols = scalar_cols
+				self.y_train = pd.Series(categ_col)
+			if scalar_cols is None:
+				scalar_cols = data_frame.columns
+			self.X_train, self.scalar_cols = data_frame[scalar_cols], scalar_cols
 			if rescale:
 				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(rescale_factors_calc,axis=0)),columns=['minima','ranges'])
 			else:
@@ -78,12 +73,10 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
-			self.cm = cm
-		else:
-			cm = self.cm
-		return cm
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+		return self.cm
 	def confusion_matrix_plot(self,X=None,y_true=None,savepath=None,sample_weight=None,title=None,figsize=(6.4,4.8),cmap='hot_r'):
 		if title is None:
 			title = 'Random Forest Model Confusion Matrix'
@@ -95,13 +88,11 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
-			self.cm = cm
-		else:
-			cm = self.cm
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
 		fig, ax = plt.subplots(figsize=figsize)
-		sns.heatmap(cm,cmap=cmap,vmax=max([cm[col].nlargest(2)[1] for col in cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
+		sns.heatmap(self.cm,cmap=cmap,vmax=max([self.cm[col].nlargest(2)[1] for col in self.cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
 		ax.set_yticklabels(ax.get_yticklabels(),rotation=0)
 		ax.set_title(title)
 		fig.tight_layout()
@@ -118,20 +109,18 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
-			self.cm = cm
-		else:
-			cm = self.cm
-		acc = np.trace(cm)/cm.values.sum()
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+		acc = np.trace(self.cm)/self.cm.values.sum()
 		err = 1- acc
 		if len(self.class_labels)==2:
 			p = self.pos_label
 			n = [x for x in self.class_labels if x!= p][0]
-			sens = cm.loc['%s'%p,p]/cm.loc['%s'%p,:].sum()
-			spec = cm.loc['%s'%n,n]/cm.loc['%s'%n,:].sum()
-			ppv = cm.loc['%s'%p,p]/cm.loc[:,p].sum()
-			fpr = cm.loc['%s'%n,p]/cm.loc['%s'%n,:].sum()
+			sens = self.cm.loc['%s'%p,p]/self.cm.loc['%s'%p,:].sum()
+			spec = self.cm.loc['%s'%n,n]/self.cm.loc['%s'%n,:].sum()
+			ppv = self.cm.loc['%s'%p,p]/self.cm.loc[:,p].sum()
+			fpr = self.cm.loc['%s'%n,p]/self.cm.loc['%s'%n,:].sum()
 			return {'Accuracy':acc,'Error Rate':err,'Sensitivity':sens,'Specificity':spec,'Positive Predictive Value':ppv,'False Positive Rate':fpr}
 		return {'Accuracy':acc,'Error Rate':err}
 	def roc_auc(self,X=None,y_true=None,plot=True,savepath=None,sample_weight=None,drop_intermediate=True,title=None,figsize=(6.4,4.8)):
@@ -145,18 +134,15 @@ class random_forest_classifier:
 					self.y_test, y_score = X[y_true], self.predict_proba(X.drop(columns=y_true))['P(%s)'%(self.pos_label)]
 					y_true = self.y_test
 				else:
-					self.y_test, y_score = X[y_true], self.predict_proba(X)['P(%s)'%(self.pos_label)]	
+					self.y_test, y_score = y_true, self.predict_proba(X)['P(%s)'%(self.pos_label)]	
 			else:
-				print('Test input null values: ',X.isnull().values.any())
-				print('Test input infinite values: ',not np.isfinite(X).values.all())
-				y_true, y_score = self.y_test, self.predict_proba(X)['P(%s)'%(self.pos_label)]
-				print('y_true, y_score check')
+				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
+				y_true = self.y_test
 		else:
 			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
 		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 		if plot:
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
-			print('curve check')
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
 			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
@@ -188,20 +174,15 @@ class random_forest_classifier:
 class log_reg_classifier:
 	def __init__(self, data_frame,categ_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
 		if type(data_frame) != str:
-			if scalar_cols is None:
-				if categ_col is None:
-					self.y_train = data_frame[data_frame.columns[-1]]
-					self.X_train = data_frame.drop(columns=data_frame.columns[-1])
-				elif type(categ_col) == str:
-					self.y_train = data_frame[categ_col]
-					self.X_train = data_frame.drop(columns=categ_col)
-				else:
-					self.y_train = pd.Series(categ_col)
-					self.X_train = data_frame
-				scalar_cols = self.X_train.columns
+			if categ_col is None:
+				self.y_train, data_frame = data_frame[data_frame.columns[-1]], data_frame.drop(columns=data_frame.columns[-1])
+			elif type(categ_col) == str:
+				self.y_train, data_frame = data_frame[categ_col], data_frame.drop(columns=categ_col)
 			else:
-				self.X_train = data_frame[scalar_cols]
-			self.scalar_cols = scalar_cols
+				self.y_train = pd.Series(categ_col)
+			if scalar_cols is None:
+				scalar_cols = data_frame.columns
+			self.X_train, self.scalar_cols = data_frame[scalar_cols], scalar_cols
 			if rescale:
 				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(rescale_factors_calc,axis=0)),columns=['minima','ranges'])
 			else:
@@ -244,12 +225,10 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
-			self.cm = cm
-		else:
-			cm = self.cm
-		return cm
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+		return self.cm
 	def confusion_matrix_plot(self,X=None,y_true=None,savepath=None,sample_weight=None,title=None,figsize=(6.4,4.8),cmap='hot_r'):
 		if title is None:
 			title = 'Logistic Regression Model Confusion Matrix'
@@ -261,13 +240,11 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
-			self.cm = cm
-		else:
-			cm = self.cm
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
 		fig, ax = plt.subplots(figsize=figsize)
-		sns.heatmap(cm,cmap=cmap,vmax=max([cm[col].nlargest(2)[1] for col in cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
+		sns.heatmap(self.cm,cmap=cmap,vmax=max([self.cm[col].nlargest(2)[1] for col in self.cm.columns]),annot=True, linewidths=0.02, linecolor='k', fmt='d', ax=ax)
 		ax.set_yticklabels(ax.get_yticklabels(),rotation=0)
 		ax.set_title(title)
 		fig.tight_layout()
@@ -284,20 +261,18 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				y_true, y_pred = self.y_test, self.predict(X)
-			cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
-			self.cm = cm
-		else:
-			cm = self.cm
-		acc = np.trace(cm)/cm.values.sum()
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				y_true = self.y_test
+			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
+		acc = np.trace(self.cm)/self.cm.values.sum()
 		err = 1- acc
 		if len(self.class_labels)==2:
 			p = self.pos_label
 			n = [x for x in self.class_labels if x!= p][0]
-			sens = cm.loc['%s'%p,p]/cm.loc['%s'%p,:].sum()
-			spec = cm.loc['%s'%n,n]/cm.loc['%s'%n,:].sum()
-			ppv = cm.loc['%s'%p,p]/cm.loc[:,p].sum()
-			fpr = cm.loc['%s'%n,p]/cm.loc['%s'%n,:].sum()
+			sens = self.cm.loc['%s'%p,p]/self.cm.loc['%s'%p,:].sum()
+			spec = self.cm.loc['%s'%n,n]/self.cm.loc['%s'%n,:].sum()
+			ppv = self.cm.loc['%s'%p,p]/self.cm.loc[:,p].sum()
+			fpr = self.cm.loc['%s'%n,p]/self.cm.loc['%s'%n,:].sum()
 			return {'Accuracy':acc,'Error Rate':err,'Sensitivity':sens,'Specificity':spec,'Positive Predictive Value':ppv,'False Positive Rate':fpr}
 		return {'Accuracy':acc,'Error Rate':err}
 	def roc_auc(self,X=None,y_true=None,plot=True,savepath=None,sample_weight=None,drop_intermediate=True,title=None,figsize=(6.4,4.8)):
@@ -311,9 +286,10 @@ class log_reg_classifier:
 					self.y_test, y_score = X[y_true], self.predict_proba(X.drop(columns=y_true))['P(%s)'%(self.pos_label)]
 					y_true = self.y_test
 				else:
-					self.y_test, y_score = X[y_true], self.predict_proba(X)['P(%s)'%(self.pos_label)]	
+					self.y_test, y_score = y_true, self.predict_proba(X)['P(%s)'%(self.pos_label)]	
 			else:
-				y_true, y_score = self.y_test, self.predict_proba(X)['P(%s)'%(self.pos_label)]
+				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
+				y_true = self.y_test
 		else:
 			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
 		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
