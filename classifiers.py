@@ -582,12 +582,12 @@ class ridge_reg_classifier:
 		if X is not None:
 			if y_true is not None:
 				if type(y_true) == str:
-					self.y_test, y_score = X[y_true], self.model.decision_function(X.drop(columns=y_true))
+					self.y_test, self.X_test, y_score = X[y_true], X.drop(columns=y_true), self.model.decision_function(X.drop(columns=y_true))
 					y_true = self.y_test
 				else:
-					self.y_test, y_score = y_true, self.model.decision_function(X)
+					self.y_test, self.X_test, y_score = y_true, X, self.model.decision_function(X)
 			else:
-				self.y_test, y_score = X[self.y_train.name], self.model.decision_function(X.drop(columns=self.y_train.name))
+				self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 		else:
 			y_true, y_score = self.y_test, self.model.decision_function(self.X_test)
@@ -743,18 +743,18 @@ class svm_classifier:
 					try:
 						self.y_test, y_score = X[y_true], self.predict_proba(X.drop(columns=y_true))['P(%s)'%(self.pos_label)]
 					except AttributeError:
-						self.y_test, y_score = X[y_true], self.model.decision_function(X.drop(columns=y_true))
+						self.y_test, self.X_test, y_score = X[y_true], X.drop(columns=y_true), self.model.decision_function(X.drop(columns=y_true))
 					y_true = self.y_test
 				else:
 					try:
 						self.y_test, y_score = y_true, self.predict_proba(X)['P(%s)'%(self.pos_label)]
 					except AttributeError:
-						self.y_test, y_score = y_true, self.model.decision_function(X)
+						self.y_test, self.X_test, y_score = y_true, X, self.model.decision_function(X)
 			else:
 				try:
 					self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				except AttributeError:
-					self.y_test, y_score = X[self.y_train.name], self.model.decision_function(X.drop(columns=self.y_train.name))
+					self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 		else:
 			try:
