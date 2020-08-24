@@ -640,10 +640,12 @@ class svm_classifier:
 			else:
 				self.rescale_factors = pd.DataFrame(list(self.X_train.apply(lambda x: (0,1),axis=0)),columns=['minima','ranges'])
 			if linear:
+				self.linear = True
 				if max_iter == -1:
 					max_iter = 1000
 				self.model = LinearSVC(penalty=penalty,loss=loss,dual=dual,tol=tol,C=C,multi_class=multi_class,fit_intercept=fit_intercept,intercept_scaling=intercept_scaling,class_weight=class_weight,verbose=verbose,random_state=random_state,max_iter=max_iter).fit((self.X_train - self.rescale_factors['minima'])/self.rescale_factors['ranges'],self.y_train,sample_weight=sample_weight)
 			else:
+				self.linear = False
 				self.model = SVC(C=C,kernel=kernel,degree=degree,gamma=gamma,coef0=coef0,shrinking=shrinking,probability=True,tol=tol,cache_size=cache_size,class_weight=class_weight,verbose=verbose,max_iter=max_iter,decision_function_shape=decision_function_shape,random_state=random_state).fit((self.X_train - self.rescale_factors['minima'])/self.rescale_factors['ranges'],self.y_train,sample_weight=sample_weight)
 			self.class_labels = self.model.classes_
 			if len(self.class_labels) == 2: #Need to identify positive/negative labels to calculate ROC curve, sensitivity, specificity, false positive rate, positive predictive value
