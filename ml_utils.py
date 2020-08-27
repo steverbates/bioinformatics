@@ -526,7 +526,7 @@ class tsne:
 
 
 class random_forest_classifier:
-	def __init__(self,data_frame,categ_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.	data_frame rows are samples, columns are variable names.	categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.	pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters are defaults to pass to RandomForestClassifier class.
+	def __init__(self,data_frame,categ_col=None,scalar_cols=None,n_estimators=100,criterion='gini',max_depth=None,min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_features='auto',max_leaf_nodes=None,min_impurity_decrease=0.0,min_impurity_split=None,bootstrap=True,oob_score=False,n_jobs=None,random_state=None,verbose=0,warm_start=False,class_weight=None,sample_weight=None,rescale=True,pos_label=None): #For classifying according to predetermined classes.  data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive in two-way classification. All other parameters are defaults to pass to RandomForestClassifier class.
 		if type(data_frame) != str:
 			if categ_col is None:
 				self.y_train, data_frame = data_frame[data_frame.columns[-1]], data_frame.drop(columns=data_frame.columns[-1])
@@ -551,7 +551,7 @@ class random_forest_classifier:
 					if self.class_labels[1] != pos_label:
 						self.class_labels[0] = self.class_labels[1]
 						self.class_labels[1] = pos_label
-		else:	#if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
+		else:  #if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
 			saved = load(data_frame)
 			for var in vars(saved).keys():
 				setattr(self,var,vars(saved)[var])
@@ -569,6 +569,10 @@ class random_forest_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -579,7 +583,7 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		return self.cm
@@ -594,7 +598,7 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
 		fig, ax = plt.subplots(figsize=figsize)
@@ -615,7 +619,7 @@ class random_forest_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		acc = np.trace(self.cm)/self.cm.values.sum()
@@ -644,14 +648,13 @@ class random_forest_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -662,7 +665,7 @@ class random_forest_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='random_forest_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -678,7 +681,7 @@ class random_forest_classifier:
 
 
 class grad_boost_classifier:
-	def __init__(self, data_frame,categ_col=None,scalar_cols=None,loss='deviance',learning_rate=0.1,n_estimators=100,subsample=1.0,criterion='friedman_mse',min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_depth=3,min_impurity_decrease=0.0,min_impurity_split=None,init=None,random_state=None,max_features=None,verbose=0,max_leaf_nodes=None,warm_start=False,presort='auto',validation_fraction=0.1,n_iter_no_change=None,tol=0.0001,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.	categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.	pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to GradientBoostingClassifier class.
+	def __init__(self, data_frame,categ_col=None,scalar_cols=None,loss='deviance',learning_rate=0.1,n_estimators=100,subsample=1.0,criterion='friedman_mse',min_samples_split=2,min_samples_leaf=1,min_weight_fraction_leaf=0.0,max_depth=3,min_impurity_decrease=0.0,min_impurity_split=None,init=None,random_state=None,max_features=None,verbose=0,max_leaf_nodes=None,warm_start=False,presort='auto',validation_fraction=0.1,n_iter_no_change=None,tol=0.0001,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to GradientBoostingClassifier class.
 		if type(data_frame) != str:
 			if categ_col is None:
 				self.y_train, data_frame = data_frame[data_frame.columns[-1]], data_frame.drop(columns=data_frame.columns[-1])
@@ -703,7 +706,7 @@ class grad_boost_classifier:
 					if self.class_labels[1] != pos_label:
 						self.class_labels[0] = self.class_labels[1]
 						self.class_labels[1] = pos_label
-		else:	#if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
+		else:  #if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
 			saved = load(data_frame)
 			for var in vars(saved).keys():
 				setattr(self,var,vars(saved)[var])
@@ -721,6 +724,10 @@ class grad_boost_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -731,7 +738,7 @@ class grad_boost_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		return self.cm
@@ -746,7 +753,7 @@ class grad_boost_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
 		fig, ax = plt.subplots(figsize=figsize)
@@ -767,7 +774,7 @@ class grad_boost_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		acc = np.trace(self.cm)/self.cm.values.sum()
@@ -796,14 +803,13 @@ class grad_boost_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -814,7 +820,7 @@ class grad_boost_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='grad_boost_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -830,7 +836,7 @@ class grad_boost_classifier:
 
 
 class log_reg_classifier:
-	def __init__(self, data_frame,categ_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.	categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.	pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
+	def __init__(self, data_frame,categ_col=None,scalar_cols=None,penalty='l2', dual=False, tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, class_weight=None, random_state=None,solver='liblinear',max_iter=100, multi_class='ovr', verbose=0, warm_start=False,n_jobs=None,sample_weight=None,rescale=True,pos_label=None): #data_frame rows are samples, columns are variable names.  categ_col and scalar_cols are used to set targets and input variables for model, and rescale used to indicate that each input variable will be rescaled as a fraction of its maximum value; set to False if data has already been conditioned.  pos_label can optionally be used to force the label name considered to be positive (i.e. higher probability in sigmoid output function) in two-way classification. All other parameters defaults to pass to LogisticRegression class.
 		if type(data_frame) != str:
 			if categ_col is None:
 				self.y_train, data_frame = data_frame[data_frame.columns[-1]], data_frame.drop(columns=data_frame.columns[-1])
@@ -855,7 +861,7 @@ class log_reg_classifier:
 					if self.class_labels[1] != pos_label:
 						self.class_labels[0] = self.class_labels[1]
 						self.class_labels[1] = pos_label
-		else:	#if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
+		else:  #if data frame argument is a string, this is interpreted as a filepath to load a previously saved model from a file, and all other arguments are overriden.
 			saved = load(data_frame)
 			for var in vars(saved).keys():
 				setattr(self,var,vars(saved)[var])
@@ -873,6 +879,10 @@ class log_reg_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -883,7 +893,7 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		return self.cm
@@ -898,7 +908,7 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted')) #Setting index the same as columns, as I wanted, raises an error when feeding cm to sns.heatmap, I so had to hack it like so.
 		fig, ax = plt.subplots(figsize=figsize)
@@ -919,7 +929,7 @@ class log_reg_classifier:
 				else:
 					self.y_test, y_pred = y_true, self.predict(X)
 			else:
-				self.y_test, y_pred	= X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
+				self.y_test, y_pred  = X[self.y_train.name], self.predict(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
 			self.cm = pd.DataFrame(confusion_matrix(y_true,y_pred,labels=self.class_labels,sample_weight=sample_weight),index=pd.Series(['%s'%s for s in self.class_labels],name='Actual'),columns=pd.Series(self.class_labels,name='Predicted'))
 		acc = np.trace(self.cm)/self.cm.values.sum()
@@ -948,14 +958,13 @@ class log_reg_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -966,7 +975,7 @@ class log_reg_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='log_reg_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -1094,14 +1103,13 @@ class ridge_reg_classifier:
 			else:
 				self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.model.decision_function(self.X_test)
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -1112,7 +1120,7 @@ class ridge_reg_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='ridge_reg_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -1124,7 +1132,6 @@ class ridge_reg_classifier:
 				delattr(self,attr)
 			except:
 				pass
-
 
 
 
@@ -1179,6 +1186,10 @@ class svm_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -1263,17 +1274,13 @@ class svm_classifier:
 				except AttributeError:
 					self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
-		else:
-			try:
-				y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-			except AttributeError:
-				y_true, y_score = self.y_test, self.model.decision_function(self.X_test)
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -1284,7 +1291,7 @@ class svm_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='svm_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):

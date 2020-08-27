@@ -64,6 +64,10 @@ class random_forest_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -139,14 +143,13 @@ class random_forest_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -157,7 +160,7 @@ class random_forest_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='random_forest_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -216,6 +219,10 @@ class grad_boost_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -291,14 +298,13 @@ class grad_boost_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -309,7 +315,7 @@ class grad_boost_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='grad_boost_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -368,6 +374,10 @@ class log_reg_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -443,14 +453,13 @@ class log_reg_classifier:
 			else:
 				self.y_test, y_score = X[self.y_train.name], self.predict_proba(X.drop(columns=self.y_train.name))['P(%s)'%(self.pos_label)]
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -461,7 +470,7 @@ class log_reg_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='log_reg_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -589,14 +598,13 @@ class ridge_reg_classifier:
 			else:
 				self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
-		else:
-			y_true, y_score = self.y_test, self.model.decision_function(self.X_test)
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -607,7 +615,7 @@ class ridge_reg_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='ridge_reg_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
@@ -619,7 +627,6 @@ class ridge_reg_classifier:
 				delattr(self,attr)
 			except:
 				pass
-
 
 
 
@@ -674,6 +681,10 @@ class svm_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
+		try:
+			delattr(self,'roc_points')
+		except:
+			pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -758,17 +769,13 @@ class svm_classifier:
 				except AttributeError:
 					self.y_test, self.X_test, y_score = X[self.y_train.name], X.drop(columns=self.y_train.name), self.model.decision_function(X.drop(columns=self.y_train.name))
 				y_true = self.y_test
-		else:
-			try:
-				y_true, y_score = self.y_test, self.predict_proba()['P(%s)'%(self.pos_label)]
-			except AttributeError:
-				y_true, y_score = self.y_test, self.model.decision_function(self.X_test)
-		area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
-		if plot:
+			self.roc_area = roc_auc_score(y_true,y_score,average=None,sample_weight=sample_weight,max_fpr=None)
 			fpr, tpr, thresholds = roc_curve(y_true,y_score,pos_label=self.pos_label,sample_weight=sample_weight,drop_intermediate=drop_intermediate)
+			self.roc_points = pd.DataFrame({'fpr':fpr,'tpr':tpr,'thresholds':thresholds})
+		if plot:
 			fig, ax = plt.subplots(figsize=figsize)
 			sns.set()
-			ax.plot(fpr,tpr,'-g',label='AUC=%.3f'%area)
+			ax.plot(self.roc_points.fpr,self.roc_points.tpr,'-g',label='AUC=%.3f'%self.roc_area)
 			ax.legend(loc='lower right')
 			ax.plot([0,1],[0,1],'--b')
 			ax.set_xlabel('false positive rate')
@@ -779,7 +786,7 @@ class svm_classifier:
 				plt.show()
 			else:
 				fig.savefig(savepath)
-		return area
+		return self.roc_area
 	def save(self,savepath='svm_classifier.joblib'):
 		dump(self,savepath)
 	def delattr(self,attributes):
