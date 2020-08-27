@@ -569,10 +569,11 @@ class random_forest_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
-		try:
-			delattr(self,'roc_points')
-		except:
-			pass
+		for attr in ['roc_area','roc_points']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -724,10 +725,11 @@ class grad_boost_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
-		try:
-			delattr(self,'roc_points')
-		except:
-			pass
+		for attr in ['roc_area','roc_points']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -879,10 +881,11 @@ class log_reg_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
-		try:
-			delattr(self,'roc_points')
-		except:
-			pass
+		for attr in ['roc_area','roc_points']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
@@ -1186,10 +1189,11 @@ class svm_classifier:
 			self.X_test = X[self.scalar_cols]
 		self.y_pred_proba = pd.DataFrame(self.model.predict_proba((self.X_test-self.rescale_factors['minima'])/self.rescale_factors['ranges']),index=self.X_test.index,columns=['P(%s)'%s for s in self.class_labels])
 		self.y_pred = self.y_pred_proba.idxmax(axis=1).map({'P(%s)'%s:s for s in self.class_labels}).rename('Predicted Class')
-		try:
-			delattr(self,'roc_points')
-		except:
-			pass
+		for attr in ['roc_area','roc_points']:
+			try:
+				delattr(self,attr)
+			except:
+				pass
 		return self.y_pred_proba
 	def confusion_matrix(self,X=None,y_true=None,sample_weight=None):
 		if X is not None:
